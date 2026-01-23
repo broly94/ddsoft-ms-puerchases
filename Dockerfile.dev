@@ -1,0 +1,19 @@
+FROM node:20-slim as dependencies
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+RUN apt-get update && \
+    apt-get install -y git procps && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN npm install
+
+RUN npm install -g nodemon ts-node typescript @nestjs/cli
+
+FROM dependencies AS development
+
+COPY . .
+
+CMD ["npm", "run", "start:dev"]
