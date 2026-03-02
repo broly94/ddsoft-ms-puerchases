@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -22,11 +23,13 @@ import { AppController } from './app.controller';
         password: configService.get<string>('DB_PASS'),
         database: configService.get<string>('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // true para desarrollo, false para producción
+        synchronize: true, // true para desarrollo, false para producciÃ³n
       }),
     }),
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
+
