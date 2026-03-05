@@ -8,11 +8,34 @@ export class SearchController {
   constructor(private readonly qdrantService: QdrantService) {}
 
   @Get('search')
-  async search(@Query('q') query: string) {
+  async search(
+    @Query('q') query: string,
+    @Query('rubro') rubro?: string | string[],
+    @Query('marca') marca?: string | string[],
+    @Query('peso') peso?: string | string[],
+    @Query('limit') limit: number = 20000
+  ) {
     if (!query) {
       return [];
     }
-    this.logger.log(`Received search request: ${query}`);
-    return await this.qdrantService.search(query);
+
+    const toArray = (val: any): string[] => {
+      if (!val) return [];
+      return Array.isArray(val) ? val : [val];
+    };
+    
+    const filters = {
+      rubro_descripcion: toArray(rubro),
+      marca: toArray(marca),
+      peso: toArray(peso)
+    };
+
+    // LOG CRITICO PARA VERIFICAR QUE LLEGAN FILTROS
+    this.logger.log(`[BUSQUEDA] Query: "${query}" | Filtros: ${JSON.stringify(filters)}`);
+    
+    // FORZAMOS QUE LIMIT SEA UN NUMERO (USIZE) PARA QDRANT
+    const numericLimit = Number(limit) || 20000;
+    
+    return await this.qdrantService.search(query, filters, numericLimit);
   }
 }

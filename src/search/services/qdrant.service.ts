@@ -30,41 +30,89 @@ export class QdrantService implements OnModuleInit {
       );
 
       if (!exists) {
-        this.logger.log(`Creating collection ${this.collectionName} with 1024 dimensions...`);
+        this.logger.log(`Creating collection ${this.collectionName}`);
         await this.client.createCollection(this.collectionName, {
           vectors: { 
             size: this.embeddingService.getDimensions(), 
             distance: 'Cosine' 
           },
         });
-        this.logger.log('✅ Collection created successfully');
       }
     } catch (error) {
-      this.logger.error('❌ Error checking/creating Qdrant collection:', error);
+      this.logger.error('Error checking/creating Qdrant collection:', error);
     }
   }
 
-  async search(query: string, limit: number = 10) {
+  private cleanText(text: string): string {
+    if (!text) return '';
+    // Mismo algoritmo que el indexador
+    return text
+      .toString()
+      .trim()
+      .replace(/[^a-zA-Z0-9\sÃ±Ã‘,./-]/g, '')
+      .replace(/\s{2,}/g, ' ');
+  }
+
+  // Mapeo especial para inconsistencias en marcas (ej: 2 vs DOS)
+  private mapBrandAliases(brands: string[]): string[] {
+    const results = [...brands];
+    if (brands.some(b => b.toUpperCase().includes('2 HERMANOS'))) {
+      results.push('DOS HERMANOS');
+    }
+    if (brands.some(b => b.toUpperCase().includes('DOS HERMANOS'))) {
+      results.push('2 HERMANOS');
+    }
+    return Array.from(new Set(results));
+  }
+
+  async search(query: string, filters?: { rubro_descripcion?: string[], marca?: string[], peso?: string[] }, limit: number = 20000) {
     try {
-      this.logger.log(`Performing semantic search for: ${query}`);
       const embedding = await this.embeddingService.generate(query);
-      this.logger.log(`Generated embedding of size: ${embedding.length}`);
+
+      const mustConditions: any[] = [];
       
+      if (filters?.rubro_descripcion?.length > 0) {
+        mustConditions.push({
+          key: 'rubro_descripcion',
+          match: { any: filters.rubro_descripcion.map(f => this.cleanText(f)) }
+        });
+      }
+
+      if (filters?.marca?.length > 0) {
+        const brandNames = this.mapBrandAliases(filters.marca);
+        mustConditions.push({
+          key: 'marca',
+          match: { any: brandNames.map(f => this.cleanText(f)) }
+        });
+      }
+
+      if (filters?.peso?.length > 0) {
+        mustConditions.push({
+          key: 'peso',
+          match: { any: filters.peso.map(f => this.cleanText(f)) }
+        });
+      }
+
+      const hasFilters = mustConditions.length > 0;
+      
+      this.logger.log(`[QDRANT] Ejecutando bÃºsqueda con ${mustConditions.length} filtros activos. LÃ­mite: ${limit}`);
+
+      // Usamos bÃºsqueda semÃ¡ntica pero con filtros estrictos OBLIGATORIOS (must)
       const results = await this.client.search(this.collectionName, {
         vector: embedding,
         limit,
+        filter: hasFilters ? { must: mustConditions } : undefined,
         with_payload: true,
         with_vector: false,
+        params: {
+          exact: true, // Forzamos bÃºsqueda exacta para filtros
+        }
       });
 
-      this.logger.log(`Search returned ${results.length} results`);
+      this.logger.log(`[QDRANT] BÃºsqueda completada: ${results.length} resultados encontrados.`);
       return results;
     } catch (error) {
-      this.logger.error(`Error searching in Qdrant for query: ${query}`, error);
-      // Log more detail if available
-      if (error.status) {
-        this.logger.error(`Qdrant error status: ${error.status}, message: ${JSON.stringify(error.data)}`);
-      }
+      this.logger.error(`Error searching in Qdrant: ${error.message}`);
       throw error;
     }
   }
