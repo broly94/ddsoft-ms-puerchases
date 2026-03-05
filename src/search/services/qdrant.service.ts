@@ -45,21 +45,21 @@ export class QdrantService implements OnModuleInit {
 
   private cleanText(text: string): string {
     if (!text) return '';
-    // Mismo algoritmo que el indexador
     return text
       .toString()
       .trim()
-      .replace(/[^a-zA-Z0-9\sÃ±Ã‘,./-]/g, '')
+      .replace(/[^a-zA-Z0-9\s,./-]/g, '')
       .replace(/\s{2,}/g, ' ');
   }
 
-  // Mapeo especial para inconsistencias en marcas (ej: 2 vs DOS)
   private mapBrandAliases(brands: string[]): string[] {
     const results = [...brands];
-    if (brands.some(b => b.toUpperCase().includes('2 HERMANOS'))) {
+    const upperBrands = brands.map(b => b.toUpperCase());
+
+    if (upperBrands.some(b => b.includes('2 HERMANOS'))) {
       results.push('DOS HERMANOS');
     }
-    if (brands.some(b => b.toUpperCase().includes('DOS HERMANOS'))) {
+    if (upperBrands.some(b => b.includes('DOS HERMANOS'))) {
       results.push('2 HERMANOS');
     }
     return Array.from(new Set(results));
@@ -70,7 +70,7 @@ export class QdrantService implements OnModuleInit {
       const embedding = await this.embeddingService.generate(query);
 
       const mustConditions: any[] = [];
-      
+
       if (filters?.rubro_descripcion?.length > 0) {
         mustConditions.push({
           key: 'rubro_descripcion',
@@ -80,9 +80,12 @@ export class QdrantService implements OnModuleInit {
 
       if (filters?.marca?.length > 0) {
         const brandNames = this.mapBrandAliases(filters.marca);
+        const cleanedBrands = brandNames.map(f => this.cleanText(f));
+        const allBrandVariants = Array.from(new Set([...brandNames, ...cleanedBrands]));
+
         mustConditions.push({
           key: 'marca',
-          match: { any: brandNames.map(f => this.cleanText(f)) }
+          match: { any: allBrandVariants }
         });
       }
 
@@ -94,10 +97,9 @@ export class QdrantService implements OnModuleInit {
       }
 
       const hasFilters = mustConditions.length > 0;
-      
-      this.logger.log(`[QDRANT] Ejecutando bÃºsqueda con ${mustConditions.length} filtros activos. LÃ­mite: ${limit}`);
 
-      // Usamos bÃºsqueda semÃ¡ntica pero con filtros estrictos OBLIGATORIOS (must)
+      this.logger.log(`[QDRANT] Ejecutando busqueda con ${mustConditions.length} filtros activos. Must: ${JSON.stringify(mustConditions)}`);
+
       const results = await this.client.search(this.collectionName, {
         vector: embedding,
         limit,
@@ -105,11 +107,11 @@ export class QdrantService implements OnModuleInit {
         with_payload: true,
         with_vector: false,
         params: {
-          exact: true, // Forzamos bÃºsqueda exacta para filtros
+          exact: true,
         }
       });
 
-      this.logger.log(`[QDRANT] BÃºsqueda completada: ${results.length} resultados encontrados.`);
+      this.logger.log(`[QDRANT] Busqueda completada: ${results.length} resultados encontrados.`);
       return results;
     } catch (error) {
       this.logger.error(`Error searching in Qdrant: ${error.message}`);

@@ -17,11 +17,11 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT ?? 3000;
-  
+
   await app.startAllMicroservices();
   await app.listen(port);
-  
+
   logger.log(`Purchases microservice is running on: http://localhost:${port}`);
-  logger.log(`Purchases microservice (Redis) is connected`);
+  logger.log(`Purchases microservice (Redis) is connected hot reload`);
 }
 bootstrap();
