@@ -20,6 +20,7 @@ export class QdrantService implements OnModuleInit {
     this.client = new QdrantClient({ url });
 
     await this.ensureCollectionExists();
+    await this.ensureIndexes();
   }
 
   private async ensureCollectionExists() {
@@ -40,6 +41,18 @@ export class QdrantService implements OnModuleInit {
       }
     } catch (error) {
       this.logger.error('Error checking/creating Qdrant collection:', error);
+    }
+  }
+
+  private async ensureIndexes() {
+    try {
+      this.logger.log(`Ensuring text index for ${this.collectionName}`);
+      await this.client.createPayloadIndex(this.collectionName, {
+        field_name: 'texto_para_embedding',
+        field_schema: 'text',
+      });
+    } catch (e) {
+      // Ignorar si el indice ya existe
     }
   }
 
@@ -71,6 +84,7 @@ export class QdrantService implements OnModuleInit {
 
       const mustConditions: any[] = [];
 
+      // 1. FILTROS DE CATALOGO (RUBRO, MARCA, PESO)
       if (filters?.rubro_descripcion?.length > 0) {
         mustConditions.push({
           key: 'rubro_descripcion',
@@ -96,9 +110,27 @@ export class QdrantService implements OnModuleInit {
         });
       }
 
+      // 2. FILTRO DE PALABRAS CLAVE (TODAS DEBEN ESTAR)
+      const keywords = query.toUpperCase()
+        .replace(/[^A-Z0-9\s]/g, '')
+        .split(/\s+/)
+        .filter(word => word.length >= 2);
+
+      if (keywords.length > 0) {
+        // Obligamos a que CADA palabra buscada exista en el texto del producto
+        keywords.forEach(word => {
+          mustConditions.push({
+            key: 'texto_para_embedding',
+            match: {
+              text: word
+            }
+          });
+        });
+      }
+
       const hasFilters = mustConditions.length > 0;
 
-      this.logger.log(`[QDRANT] Ejecutando busqueda con ${mustConditions.length} filtros activos. Must: ${JSON.stringify(mustConditions)}`);
+      this.logger.log(`[QDRANT] Busqueda estricta (AND): "${keywords.join(' + ')}". Filtros: ${mustConditions.length}`);
 
       const results = await this.client.search(this.collectionName, {
         vector: embedding,
