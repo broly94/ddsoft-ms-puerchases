@@ -138,9 +138,6 @@ export class QdrantService implements OnModuleInit {
         filter: hasFilters ? { must: mustConditions } : undefined,
         with_payload: true,
         with_vector: false,
-        params: {
-          exact: true,
-        }
       });
 
       this.logger.log(`[QDRANT] Busqueda completada: ${results.length} resultados encontrados.`);
