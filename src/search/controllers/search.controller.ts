@@ -7,6 +7,12 @@ export class SearchController {
 
   constructor(private readonly qdrantService: QdrantService) {}
 
+  @Get('filters')
+  async getFilters() {
+    this.logger.log(`[FILTROS] Solicitud de filtros disponibles desde colección Qdrant`);
+    return await this.qdrantService.getFilterValues();
+  }
+
   @Get('search')
   async search(
     @Query('q') query: string,

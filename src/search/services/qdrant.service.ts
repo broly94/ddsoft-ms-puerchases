@@ -46,14 +46,90 @@ export class QdrantService implements OnModuleInit {
 
   private async ensureIndexes() {
     try {
-      this.logger.log(`Ensuring text index for ${this.collectionName}`);
+      this.logger.log(`Recreating text index with prefix tokenizer for ${this.collectionName}`);
+      // Eliminar índice anterior (puede tener tokenizer 'word') e ignorar si no existe
+      try {
+        await this.client.deletePayloadIndex(this.collectionName, 'texto_para_embedding');
+      } catch (_) { /* no existía */ }
+
       await this.client.createPayloadIndex(this.collectionName, {
         field_name: 'texto_para_embedding',
-        field_schema: 'text',
+        field_schema: {
+          type: 'text',
+          tokenizer: 'prefix',
+          min_token_len: 2,
+          max_token_len: 15,
+          lowercase: true,
+        },
       });
+      this.logger.log(`Text index (prefix) created for ${this.collectionName}`);
     } catch (e) {
-      // Ignorar si el indice ya existe
+      this.logger.warn(`Could not recreate text index: ${e.message}`);
     }
+  }
+
+  // Cache de filtros disponibles (se invalida al reiniciar o cada 10 min)
+  private filterCache: { rubros: string[]; marcas: string[]; pesos: string[]; cachedAt: number } | null = null;
+  private readonly FILTER_CACHE_TTL_MS = 10 * 60 * 1000;
+
+  async getFilterValues(): Promise<{ rubros: string[]; marcas: string[]; pesos: string[] }> {
+    const now = Date.now();
+    if (this.filterCache && now - this.filterCache.cachedAt < this.FILTER_CACHE_TTL_MS) {
+      this.logger.log(`[FILTROS] Sirviendo desde cache (${this.filterCache.rubros.length} rubros, ${this.filterCache.marcas.length} marcas, ${this.filterCache.pesos.length} pesos)`);
+      return { rubros: this.filterCache.rubros, marcas: this.filterCache.marcas, pesos: this.filterCache.pesos };
+    }
+
+    this.logger.log(`[FILTROS] Construyendo filtros desde colección Qdrant: ${this.collectionName}`);
+    const rubros = new Set<string>();
+    const marcas = new Set<string>();
+    const pesos = new Set<string>();
+
+    let offset: any = undefined;
+    let page = 0;
+
+    do {
+      const result = await this.client.scroll(this.collectionName, {
+        limit: 500,
+        offset,
+        with_payload: ['rubro_descripcion', 'marca', 'peso'],
+        with_vector: false,
+      });
+
+      for (const point of result.points) {
+        const p = point.payload as any;
+        if (p?.rubro_descripcion) rubros.add(String(p.rubro_descripcion).trim());
+        if (p?.marca) marcas.add(String(p.marca).trim());
+        if (p?.peso) pesos.add(String(p.peso).trim());
+      }
+
+      offset = result.next_page_offset;
+      page++;
+    } while (offset != null);
+
+    const sorted = (s: Set<string>) => Array.from(s).filter(Boolean).sort();
+    const result = { rubros: sorted(rubros), marcas: sorted(marcas), pesos: sorted(pesos) };
+
+    this.filterCache = { ...result, cachedAt: Date.now() };
+    this.logger.log(`[FILTROS] Cache actualizado: ${result.rubros.length} rubros, ${result.marcas.length} marcas, ${result.pesos.length} pesos (${page} páginas)`);
+
+    return result;
+  }
+
+  invalidateFilterCache() {
+    this.filterCache = null;
+    this.logger.log(`[FILTROS] Cache invalidado`);
+  }
+
+  // Misma lógica que DataNormalizerService.normalizeWeight() del ETL indexer
+  private normalizeWeight(peso: string): string {
+    if (!peso) return peso;
+    const pesoStr = peso.toUpperCase().replace(/\s+/g, '').replace(',', '.');
+    const normalized = pesoStr
+      .replace(/KILOS?|KGS?|K$/, 'KG')
+      .replace(/GRAMOS?|GRS?/, 'G')
+      .replace(/LITROS?|LTS?/, 'L')
+      .replace(/CC|CM3|MLITROS?/, 'ML');
+    return normalized;
   }
 
   private cleanText(text: string): string {
@@ -106,39 +182,52 @@ export class QdrantService implements OnModuleInit {
       if (filters?.peso?.length > 0) {
         mustConditions.push({
           key: 'peso',
-          match: { any: filters.peso.map(f => this.cleanText(f)) }
+          match: { any: filters.peso.map(f => this.normalizeWeight(this.cleanText(f))) }
         });
       }
 
-      // 2. FILTRO DE PALABRAS CLAVE (TODAS DEBEN ESTAR)
+      // 2. FILTRO DE PALABRAS CLAVE con tokenizer prefix
       const keywords = query.toUpperCase()
         .replace(/[^A-Z0-9\s]/g, '')
         .split(/\s+/)
         .filter(word => word.length >= 2);
 
-      if (keywords.length > 0) {
-        // Obligamos a que CADA palabra buscada exista en el texto del producto
-        keywords.forEach(word => {
-          mustConditions.push({
-            key: 'texto_para_embedding',
-            match: {
-              text: word
-            }
-          });
+      const keywordConditions: any[] = [];
+      keywords.forEach(word => {
+        keywordConditions.push({
+          key: 'texto_para_embedding',
+          match: { text: word }
         });
-      }
+      });
 
-      const hasFilters = mustConditions.length > 0;
+      const catalogConditions = [...mustConditions]; // solo rubro/marca/peso
+      const fullConditions = [...mustConditions, ...keywordConditions];
 
-      this.logger.log(`[QDRANT] Busqueda estricta (AND): "${keywords.join(' + ')}". Filtros: ${mustConditions.length}`);
+      const hasFullFilters = fullConditions.length > 0;
+      const hasCatalogFilters = catalogConditions.length > 0;
 
-      const results = await this.client.search(this.collectionName, {
+      this.logger.log(`[QDRANT] Busqueda estricta (AND): "${keywords.join(' + ')}". Filtros: ${fullConditions.length}`);
+
+      let results = await this.client.search(this.collectionName, {
         vector: embedding,
         limit,
-        filter: hasFilters ? { must: mustConditions } : undefined,
+        filter: hasFullFilters ? { must: fullConditions } : undefined,
         with_payload: true,
         with_vector: false,
       });
+
+      // Fallback: si no hay resultados con keywords, reintentar solo con filtros de catálogo + vector
+      if (results.length === 0 && keywordConditions.length > 0) {
+        this.logger.log(`[QDRANT] Sin resultados con keywords, reintentando solo con vector + filtros catálogo`);
+        results = await this.client.search(this.collectionName, {
+          vector: embedding,
+          limit,
+          filter: hasCatalogFilters ? { must: catalogConditions } : undefined,
+          with_payload: true,
+          with_vector: false,
+        });
+        this.logger.log(`[QDRANT] Fallback completado: ${results.length} resultados encontrados.`);
+      }
 
       this.logger.log(`[QDRANT] Busqueda completada: ${results.length} resultados encontrados.`);
       return results;
