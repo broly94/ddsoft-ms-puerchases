@@ -5,6 +5,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
 import { SearchModule } from './search/search.module';
+import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
+import { TipoPago } from './entities/tipo-pago.entity';
 
 @Module({
   imports: [
@@ -26,10 +28,10 @@ import { SearchModule } from './search/search.module';
         synchronize: true, // true para desarrollo, false para producciÃ³n
       }),
     }),
+    TypeOrmModule.forFeature([OrdenCompraHeader, TipoPago]),
     SearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
-

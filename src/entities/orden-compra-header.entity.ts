@@ -12,23 +12,26 @@ export class OrdenCompraHeader {
   @Column({ type: 'varchar', length: 255, nullable: true })
   motivo_pedido: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   tipo_facturacion: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
-  pallet: number;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  cantidad_pallets: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   razon_social: string;
 
-  @Column({ type: 'varchar', length: 50, nullable: false })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   cod_proveedor: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   marca: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   plazo_pago: string;
+
+  @Column({ nullable: true })
+  id_tipo_pago: number;
 
   @ManyToOne(() => TipoPago, (tipoPago) => tipoPago.ordenes_compra, { nullable: true })
   @JoinColumn({ name: 'id_tipo_pago' })
@@ -37,6 +40,9 @@ export class OrdenCompraHeader {
   @Column({ type: 'decimal', precision: 18, scale: 2, nullable: true })
   monto: number;
 
+  @Column({ type: 'text', nullable: true })
+  nota: string;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
-  comprador: string;
+  comprador: string; 
 }
