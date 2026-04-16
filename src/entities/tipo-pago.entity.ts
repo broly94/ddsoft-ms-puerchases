@@ -11,4 +11,10 @@ export class TipoPago {
 
   @OneToMany(() => OrdenCompraHeader, (header) => header.tipo_pago)
   ordenes_compra: OrdenCompraHeader[];
+
+  @Column({ default: 1 })
+  created_by: number;
+
+  @Column({ default: 1 })
+  updated_by: number;
 }

@@ -44,5 +44,21 @@ export class OrdenCompraHeader {
   nota: string;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
-  comprador: string; 
-}
+  comprador: string;
+
+  @Column({ default: 1 })
+  created_by: number;
+
+  @Column({ default: 1 })
+  updated_by: number;
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  created_at: Date;
+
+  @Column({
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+  })
+  updated_at: Date;
+  }
