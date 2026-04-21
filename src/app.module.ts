@@ -7,6 +7,9 @@ import { AppController } from './app.controller';
 import { SearchModule } from './search/search.module';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
+import { TurnoConfig } from './entities/turno-config.entity';
+import { TurnoHeader } from './entities/turno-header.entity';
+import { Turno } from './entities/turno.entity';
 
 @Module({
   imports: [
@@ -28,7 +31,7 @@ import { TipoPago } from './entities/tipo-pago.entity';
         synchronize: true, // true para desarrollo, false para producciÃ³n
       }),
     }),
-    TypeOrmModule.forFeature([OrdenCompraHeader, TipoPago]),
+    TypeOrmModule.forFeature([OrdenCompraHeader, TipoPago, TurnoConfig, TurnoHeader, Turno]),
     SearchModule,
   ],
   controllers: [AppController],

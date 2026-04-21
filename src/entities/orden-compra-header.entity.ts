@@ -46,10 +46,20 @@ export class OrdenCompraHeader {
   @Column({ type: 'varchar', length: 100, nullable: true })
   comprador: string;
 
-  @Column({ default: 1 })
+  @Column({ type: 'date', nullable: true })
+  fecha_turno: Date | null;
+
+  // pendiente | turnado  (entregado/no_entregado viven en turnos.estado)
+  @Column({ type: 'varchar', length: 20, default: 'pendiente' })
+  estado: string;
+
+  @Column({ nullable: true })
+  turno_id: number | null;
+
+  @Column({ nullable: true })
   created_by: number;
 
-  @Column({ default: 1 })
+  @Column({ nullable: true })
   updated_by: number;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
