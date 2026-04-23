@@ -25,6 +25,10 @@ export class Turno {
   @Column({ type: 'varchar', length: 20, default: 'pendiente' })
   estado: string; // pendiente | entregado | no_entregado
 
+  /** Pallets confirmados por el proveedor al turnar. NULL = usar cantidad_pallets del pedido. */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  pallets_confirmados: number | null;
+
   @Column({ nullable: true })
   created_by: number;
 

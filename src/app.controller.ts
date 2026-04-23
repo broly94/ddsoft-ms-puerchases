@@ -46,10 +46,20 @@ export class AppController {
   /** Asigna uno o varios pedidos a un turno (crea el header si no existe). */
   @Post('turnos/assign')
   assignTurno(
-    @Body() body: { fecha: string; ids: number[] },
+    @Body() body: { fecha: string; ids: number[]; pallets?: Record<number, number> },
     @Headers('x-user-id') userId: string,
   ) {
-    return this.appService.assignTurno(body.fecha, body.ids, +userId);
+    return this.appService.assignTurno(body.fecha, body.ids, +userId, body.pallets);
+  }
+
+  /** Marca la línea como no entregada y la devuelve a Sin Turnar con estado 'rechazado'. */
+  @Post('turnos/:turnoId/lines/:ordenId/reject-return')
+  rejectAndReturn(
+    @Param('turnoId') turnoId: string,
+    @Param('ordenId') ordenId: string,
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.rejectAndReturn(+turnoId, +ordenId, +userId);
   }
 
   /** Cambia el estado de una línea individual dentro del turno. */
@@ -61,6 +71,27 @@ export class AppController {
     @Headers('x-user-id') userId: string,
   ) {
     return this.appService.setLineEstado(+turnoId, +ordenId, body.estado, +userId);
+  }
+
+  /** Restaura una línea quitada a pendiente o entregado. */
+  @Patch('turnos/:turnoId/lines/:ordenId/restore')
+  restoreQuitadoLine(
+    @Param('turnoId') turnoId: string,
+    @Param('ordenId') ordenId: string,
+    @Body() body: { estado: string },
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.restoreQuitadoLine(+turnoId, +ordenId, body.estado, +userId);
+  }
+
+  /** Elimina definitivamente una línea quitada (hard delete). */
+  @Delete('turnos/:turnoId/lines/:ordenId/permanent')
+  deleteQuitadoLine(
+    @Param('turnoId') turnoId: string,
+    @Param('ordenId') ordenId: string,
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.deleteQuitadoLine(+turnoId, +ordenId, +userId);
   }
 
   /** Quita un pedido del turno y lo devuelve a pendiente. */
@@ -82,13 +113,40 @@ export class AppController {
     return this.appService.entregarTurno(+turnoId, +userId);
   }
 
-  /** Marca todos los pedidos pendientes del turno como no entregados. */
+  /** Rechaza todos los pendientes: los quita del turno y los devuelve a Sin Turnar como rechazados. */
   @Post('turnos/:turnoId/rechazar')
   rechazarTurno(
     @Param('turnoId') turnoId: string,
     @Headers('x-user-id') userId: string,
   ) {
     return this.appService.rechazarTurno(+turnoId, +userId);
+  }
+
+  /** Solo marcar: líneas → no_entregado, pedidos regresan a Sin Turnar (pueden re-turnarse). */
+  @Post('turnos/:turnoId/marcar-rechazado')
+  marcarRechazadoTurno(
+    @Param('turnoId') turnoId: string,
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.marcarRechazadoTurno(+turnoId, +userId);
+  }
+
+  /** Permanente: líneas → no_entregado, pedidos quedan en turno (no pueden re-turnarse). */
+  @Post('turnos/:turnoId/rechazar-permanente')
+  rechazarPermanenteTurno(
+    @Param('turnoId') turnoId: string,
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.rechazarPermanenteTurno(+turnoId, +userId);
+  }
+
+  /** Revierte el rechazo de un día (error humano): restaura líneas y re-asigna pedidos. */
+  @Post('turnos/:turnoId/revertir-rechazo')
+  revertirRechazoDia(
+    @Param('turnoId') turnoId: string,
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.revertirRechazoDia(+turnoId, +userId);
   }
 
   /** Elimina el turno completo y devuelve todos los pedidos a pendiente. */
