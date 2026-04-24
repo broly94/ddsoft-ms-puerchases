@@ -37,6 +37,10 @@ export class OrdenCompraHeader {
   @JoinColumn({ name: 'id_tipo_pago' })
   tipo_pago: TipoPago;
 
+  // IDs separados por coma: "1,3" — reemplaza id_tipo_pago para multi-selección
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tipo_pago_ids: string;
+
   @Column({ type: 'decimal', precision: 18, scale: 2, nullable: true })
   monto: number;
 

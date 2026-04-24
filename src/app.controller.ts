@@ -165,4 +165,7 @@ export class AppController {
 
   @Post('tipo-pago')
   createTipoPago(@Body() data: any) { return this.appService.createTipoPago(data); }
+
+  @Delete('tipo-pago/:id')
+  deleteTipoPago(@Param('id') id: string) { return this.appService.deleteTipoPago(+id); }
 }

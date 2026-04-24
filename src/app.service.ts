@@ -472,4 +472,11 @@ export class AppService {
   async createTipoPago(data: Partial<TipoPago>) {
     return this.tipoPagoRepository.save(this.tipoPagoRepository.create(data));
   }
+
+  async deleteTipoPago(id: number) {
+    const tp = await this.tipoPagoRepository.findOneBy({ id_tipo_pago: id });
+    if (!tp) throw new NotFoundException(`TipoPago ${id} not found`);
+    await this.tipoPagoRepository.remove(tp);
+    return { deleted: true };
+  }
 }
