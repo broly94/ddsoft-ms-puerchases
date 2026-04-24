@@ -46,10 +46,10 @@ export class AppController {
   /** Asigna uno o varios pedidos a un turno (crea el header si no existe). */
   @Post('turnos/assign')
   assignTurno(
-    @Body() body: { fecha: string; ids: number[]; pallets?: Record<number, number> },
+    @Body() body: { fecha: string; ids: number[]; pallets?: Record<number, number>; incompletos?: number[] },
     @Headers('x-user-id') userId: string,
   ) {
-    return this.appService.assignTurno(body.fecha, body.ids, +userId, body.pallets);
+    return this.appService.assignTurno(body.fecha, body.ids, +userId, body.pallets, body.incompletos);
   }
 
   /** Marca la línea como no entregada y la devuelve a Sin Turnar con estado 'rechazado'. */

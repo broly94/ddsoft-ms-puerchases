@@ -84,8 +84,18 @@ export class AppService {
   /**
    * Asigna pedidos a un turno.
    * Si ya existe un turno para esa fecha lo reutiliza, si no lo crea.
+   *
+   * incompletos: IDs de pedidos que se entregan parcialmente.
+   *   Para cada uno se crea una orden "resto" con los pallets restantes (original - confirmados)
+   *   que vuelve a Sin Turnar como pendiente.
    */
-  async assignTurno(fecha: string, ids: number[], userId: number, pallets?: Record<number, number>) {
+  async assignTurno(
+    fecha: string,
+    ids: number[],
+    userId: number,
+    pallets?: Record<number, number>,
+    incompletos?: number[],
+  ) {
     const fechaDate = new Date(fecha) as any;
 
     let header = await this.turnoHeaderRepository.findOne({ where: { fecha: fechaDate } });
@@ -110,7 +120,6 @@ export class AppService {
       });
       const confirmed = pallets?.[o.id_orden_compra];
       if (!exists) {
-        // Línea nueva
         await this.turnoRepository.save(
           this.turnoRepository.create({
             turno_header_id: header.id,
@@ -122,18 +131,46 @@ export class AppService {
           }),
         );
       } else if (exists.estado === 'quitado') {
-        // Restaurar registro quitado previamente (no crear duplicado)
         exists.estado = 'pendiente';
         exists.pallets_confirmados = confirmed != null ? confirmed : null;
         exists.updated_by = userId;
         await this.turnoRepository.save(exists);
       }
-      // Si ya está activo en este turno, ignorar
       o.estado = 'turnado';
       o.fecha_turno = new Date(fecha);
       o.turno_id = header.id;
       o.updated_by = userId;
+
+      // ── Entrega parcial: crear orden "resto" ──────────────────────────────
+      if (incompletos?.includes(o.id_orden_compra) && confirmed != null && confirmed > 0) {
+        const originalPallets = parseFloat(o.cantidad_pallets as any) || 0;
+        const restantes = Math.max(0, originalPallets - confirmed);
+        if (restantes > 0) {
+          const resto = this.ordenCompraRepository.create({
+            fecha_pedido:     o.fecha_pedido,
+            motivo_pedido:    o.motivo_pedido,
+            tipo_facturacion: o.tipo_facturacion,
+            cantidad_pallets: String(restantes),
+            razon_social:     o.razon_social,
+            cod_proveedor:    o.cod_proveedor,
+            marca:            o.marca,
+            plazo_pago:       o.plazo_pago,
+            id_tipo_pago:     o.id_tipo_pago,
+            tipo_pago_ids:    o.tipo_pago_ids,
+            monto:            o.monto,
+            nota:             o.nota,
+            comprador:        o.comprador,
+            estado:           'pendiente',
+            turno_id:         null,
+            fecha_turno:      null,
+            created_by:       userId,
+            updated_by:       userId,
+          });
+          await this.ordenCompraRepository.save(resto);
+        }
+      }
     }
+
     await this.ordenCompraRepository.save(orders);
     await this.syncHeader(header.id, userId);
     return this.getOneTurno(header.id);
