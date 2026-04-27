@@ -158,6 +158,11 @@ export class AppController {
     return this.appService.deleteTurno(+turnoId, +userId);
   }
 
+  // ── Analysis ─────────────────────────────────────────────────────────────
+
+  @Get('analysis/provider-orders')
+  getProviderOrderDates() { return this.appService.getProviderOrderDates(); }
+
   // ── Tipo Pago ─────────────────────────────────────────────────────────────
 
   @Get('tipo-pago')

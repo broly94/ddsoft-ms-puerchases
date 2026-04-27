@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AppController } from './app.controller';
 import { SearchModule } from './search/search.module';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
+import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
 import { TurnoHeader } from './entities/turno-header.entity';
@@ -28,10 +29,10 @@ import { Turno } from './entities/turno.entity';
         password: configService.get<string>('DB_PASS'),
         database: configService.get<string>('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // true para desarrollo, false para producciÃ³n
+        synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
     }),
-    TypeOrmModule.forFeature([OrdenCompraHeader, TipoPago, TurnoConfig, TurnoHeader, Turno]),
+    TypeOrmModule.forFeature([OrdenCompraHeader, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno]),
     SearchModule,
   ],
   controllers: [AppController],
