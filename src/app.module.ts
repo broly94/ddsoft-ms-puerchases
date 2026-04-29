@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
 import { SearchModule } from './search/search.module';
+import { PdfImportService } from './analysis/pdf-import.service';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
@@ -36,6 +37,6 @@ import { Turno } from './entities/turno.entity';
     SearchModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, PdfImportService],
 })
 export class AppModule {}

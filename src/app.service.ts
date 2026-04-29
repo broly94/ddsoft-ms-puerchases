@@ -509,41 +509,44 @@ export class AppService {
    * Devuelve todos los proveedores con sus fechas de pedido agrupadas.
    * Usado para calcular el promedio de días de entrega cruzando con el WMS.
    */
-  async getProviderOrderDates(): Promise<{ cod_proveedor: string; razon_social: string; fechas_pedido: string[] }[]> {
+  async getProviderOrderDates(): Promise<{ cod_proveedor: string; razon_social: string; ordenes: { id: string; fecha: string }[] }[]> {
     const [activos, historicos] = await Promise.all([
-      this.ordenCompraRepository.find({
-        select: ['cod_proveedor', 'razon_social', 'fecha_pedido'],
-        where: { cod_proveedor: Not(IsNull()) },
-      }),
+      // Solo órdenes con al menos un turno entregado (completas o parcialmente entregadas)
+      this.ordenCompraRepository
+        .createQueryBuilder('oc')
+        .select(['oc.id_orden_compra', 'oc.cod_proveedor', 'oc.razon_social', 'oc.fecha_pedido'])
+        .innerJoin('turnos', 't', 't.orden_compra_id = oc.id_orden_compra AND t.estado = :estado', { estado: 'entregado' })
+        .where('oc.cod_proveedor IS NOT NULL')
+        .distinct(true)
+        .getMany(),
       this.pedidoHistoricoRepository.find({
-        select: ['cod_proveedor', 'razon_social', 'fecha_pedido'],
+        select: ['id', 'cod_proveedor', 'razon_social', 'fecha_pedido'],
         where: { cod_proveedor: Not(IsNull()) },
       }),
     ]);
 
-    const map = new Map<string, { razon_social: string; fechas: Set<string> }>();
+    const map = new Map<string, { razon_social: string; ordenes: Map<string, string> }>();
 
-    const addRow = (cod: string, razon: string, fecha: Date | null) => {
+    const addRow = (cod: string, razon: string, id: number, fecha: Date | null) => {
       if (!cod) return;
       if (!map.has(cod)) {
-        map.set(cod, { razon_social: razon || '', fechas: new Set() });
+        map.set(cod, { razon_social: razon || '', ordenes: new Map() });
       }
       if (fecha) {
         const dateStr = new Date(fecha).toISOString().split('T')[0];
-        map.get(cod)!.fechas.add(dateStr);
+        map.get(cod)!.ordenes.set(String(id), dateStr);
       }
     };
 
-    for (const o of activos)   addRow(o.cod_proveedor, o.razon_social, o.fecha_pedido);
-    for (const o of historicos) addRow(o.cod_proveedor, o.razon_social, o.fecha_pedido);
+    for (const o of activos)   addRow(o.cod_proveedor, o.razon_social, o.id_orden_compra, o.fecha_pedido);
+    for (const o of historicos) addRow(o.cod_proveedor, o.razon_social, o.id, o.fecha_pedido);
 
     return Array.from(map.entries()).map(([cod, val]) => ({
       cod_proveedor: cod,
       razon_social: val.razon_social,
-      fechas_pedido: Array.from(val.fechas).sort(),
+      ordenes: Array.from(val.ordenes.entries()).map(([id, fecha]) => ({ id, fecha })),
     }));
   }
-
   // ── Tipo Pago ────────────────────────────────────────────────────────────
 
   async findAllTipoPagos() {

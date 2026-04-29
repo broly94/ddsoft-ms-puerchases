@@ -1,10 +1,15 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Headers, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { AppService } from './app.service';
+import { PdfImportService } from './analysis/pdf-import.service';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    private readonly pdfImportService: PdfImportService,
+  ) {}
 
   @Get()
   getHello(): string { return this.appService.getHello(); }
@@ -162,6 +167,21 @@ export class AppController {
 
   @Get('analysis/provider-orders')
   getProviderOrderDates() { return this.appService.getProviderOrderDates(); }
+
+  /** Recibe PDFs, los procesa con Gemini y devuelve los datos extraídos para revisión. */
+  @Post('analysis/extract-pdf-orders')
+  @UseInterceptors(FilesInterceptor('files', 60, { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async extractPdfOrders(@UploadedFiles() files: any[]) {
+    if (!files?.length) return [];
+    const input = files.map(f => ({ filename: f.originalname, buffer: f.buffer }));
+    return this.pdfImportService.extractBatch(input);
+  }
+
+  /** Guarda los registros confirmados por el usuario en pedidos_historicos. */
+  @Post('analysis/save-pdf-orders')
+  savePdfOrders(@Body() body: { orders: any[] }) {
+    return this.pdfImportService.saveOrders(body.orders || []);
+  }
 
   // ── Tipo Pago ─────────────────────────────────────────────────────────────
 
