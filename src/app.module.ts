@@ -12,6 +12,12 @@ import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
 import { TurnoHeader } from './entities/turno-header.entity';
 import { Turno } from './entities/turno.entity';
+import { BillingType } from './entities/billing-type.entity';
+import { PurchasesProvider } from './entities/purchases-provider.entity';
+import { ProviderBillingType } from './entities/provider-billing-type.entity';
+import { ProductBillingAssignment } from './entities/product-billing-assignment.entity';
+import { ProvidersController } from './providers/providers.controller';
+import { ProvidersService } from './providers/providers.service';
 
 @Module({
   imports: [
@@ -33,10 +39,13 @@ import { Turno } from './entities/turno.entity';
         synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
     }),
-    TypeOrmModule.forFeature([OrdenCompraHeader, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno]),
+    TypeOrmModule.forFeature([
+      OrdenCompraHeader, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno,
+      BillingType, PurchasesProvider, ProviderBillingType, ProductBillingAssignment,
+    ]),
     SearchModule,
   ],
-  controllers: [AppController],
-  providers: [AppService, PdfImportService],
+  controllers: [AppController, ProvidersController],
+  providers: [AppService, PdfImportService, ProvidersService],
 })
 export class AppModule {}
