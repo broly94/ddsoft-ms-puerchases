@@ -110,7 +110,9 @@ export class ProvidersService {
     pronto_pago_pct?: number;
     pallets_minimos?: number;
     pallets_camion?: number;
-    plazo_pago_dias?: number;
+    plazo_pago_a_dias?: number;
+    plazo_pago_b_dias?: number;
+    objetivo?: number;
     observaciones?: string;
     billing_type_ids?: number[];
     created_by?: number;
@@ -141,9 +143,11 @@ export class ProvidersService {
     pronto_pago_pct: number;
     pallets_minimos: number;
     pallets_camion: number;
-    plazo_pago_dias: number;
+    plazo_pago_a_dias: number;
+    plazo_pago_b_dias: number;
+    objetivo: number;
     observaciones: string;
-    billing_types_config: { id: number; modo_pago_a_id?: number; modo_pago_b_id?: number }[];
+    billing_types_config: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[];
     updated_by: number;
   }>): Promise<PurchasesProvider> {
     const provider = await this.getProviderById(id);
@@ -162,7 +166,7 @@ export class ProvidersService {
   /** Reemplaza los tipos de facturación del proveedor (sync completo), preservando modos de pago. */
   private async setProviderBillingTypes(
     providerId: number,
-    billingTypes: { id: number; modo_pago_a_id?: number; modo_pago_b_id?: number }[],
+    billingTypes: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[],
   ): Promise<void> {
     await this.providerBillingRepo.delete({ provider_id: providerId });
 
@@ -178,8 +182,8 @@ export class ProvidersService {
       this.providerBillingRepo.create({
         provider_id: providerId,
         billing_type_id: bt.id,
-        modo_pago_a_id: bt.modo_pago_a_id ?? null,
-        modo_pago_b_id: bt.modo_pago_b_id ?? null,
+        modo_pago_a_ids: bt.modo_pago_a_ids ?? [],
+        modo_pago_b_ids: bt.modo_pago_b_ids ?? [],
       }),
     );
     await this.providerBillingRepo.save(records);

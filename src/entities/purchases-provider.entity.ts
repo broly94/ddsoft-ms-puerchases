@@ -50,9 +50,17 @@ export class PurchasesProvider {
   @Column({ length: 20, nullable: true })
   tipo_decomiso: string;
 
-  /** Plazo de pago en días (ej: 30, 60). */
+  /** Plazo de pago en días para la Parte A (ej: 30). */
   @Column({ type: 'int', nullable: true })
-  plazo_pago_dias: number;
+  plazo_pago_a_dias: number;
+
+  /** Plazo de pago en días para la Parte B (ej: 0 = contra entrega, 7, etc.). */
+  @Column({ type: 'int', nullable: true })
+  plazo_pago_b_dias: number;
+
+  /** Objetivo comercial del proveedor en %. 0 = sin objetivo. */
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  objetivo: number;
 
   @Column({ type: 'text', nullable: true })
   observaciones: string;

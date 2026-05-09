@@ -59,7 +59,9 @@ export class ProvidersController {
     pronto_pago_pct?: number;
     pallets_minimos?: number;
     pallets_camion?: number;
-    plazo_pago_dias?: number;
+    plazo_pago_a_dias?: number;
+    plazo_pago_b_dias?: number;
+    objetivo?: number;
     observaciones?: string;
     billing_type_ids?: number[];
     created_by?: number;
@@ -80,9 +82,11 @@ export class ProvidersController {
     pronto_pago_pct?: number;
     pallets_minimos?: number;
     pallets_camion?: number;
-    plazo_pago_dias?: number;
+    plazo_pago_a_dias?: number;
+    plazo_pago_b_dias?: number;
+    objetivo?: number;
     observaciones?: string;
-    billing_types_config?: { id: number; modo_pago_a_id?: number; modo_pago_b_id?: number }[];
+    billing_types_config?: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[];
     updated_by?: number;
   }) {
     const { id, ...rest } = data;
