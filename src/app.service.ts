@@ -351,6 +351,18 @@ export class AppService {
     return this.getOneTurno(turnoId);
   }
 
+  /** Activa/desactiva el flag temporal "contra entrega" de una línea de turno. */
+  async setContraEntrega(turnoId: number, ordenId: number, value: boolean, userId: number) {
+    const line = await this.turnoRepository.findOne({
+      where: { turno_header_id: turnoId, orden_compra_id: ordenId },
+    });
+    if (!line) throw new NotFoundException('Línea de turno no encontrada');
+    line.contra_entrega = value;
+    line.updated_by = userId;
+    await this.turnoRepository.save(line);
+    return this.getOneTurno(turnoId);
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private async getOneTurno(turnoId: number) {

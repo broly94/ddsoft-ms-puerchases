@@ -29,6 +29,10 @@ export class Turno {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   pallets_confirmados: number | null;
 
+  /** Flag temporal: pedido es contra entrega. Se reemplazará con datos del proveedor en el futuro. */
+  @Column({ type: 'boolean', default: false })
+  contra_entrega: boolean;
+
   @Column({ nullable: true })
   created_by: number;
 

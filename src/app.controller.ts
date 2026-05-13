@@ -78,6 +78,17 @@ export class AppController {
     return this.appService.setLineEstado(+turnoId, +ordenId, body.estado, +userId);
   }
 
+  /** Activa/desactiva el flag temporal "contra entrega" de una línea de turno. */
+  @Patch('turnos/:turnoId/lines/:ordenId/contra-entrega')
+  setContraEntrega(
+    @Param('turnoId') turnoId: string,
+    @Param('ordenId') ordenId: string,
+    @Body() body: { value: boolean },
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.setContraEntrega(+turnoId, +ordenId, body.value, +userId);
+  }
+
   /** Restaura una línea quitada a pendiente o entregado. */
   @Patch('turnos/:turnoId/lines/:ordenId/restore')
   restoreQuitadoLine(
