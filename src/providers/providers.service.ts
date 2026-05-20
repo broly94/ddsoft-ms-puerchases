@@ -147,7 +147,7 @@ export class ProvidersService {
     plazo_pago_b_dias: number;
     objetivo: number;
     observaciones: string;
-    billing_types_config: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[];
+    billing_types_config: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[]; anticipado_a?: boolean; contra_entrega_a?: boolean; anticipado_b?: boolean; contra_entrega_b?: boolean }[];
     updated_by: number;
   }>): Promise<PurchasesProvider> {
     const provider = await this.getProviderById(id);
@@ -166,7 +166,15 @@ export class ProvidersService {
   /** Reemplaza los tipos de facturación del proveedor (sync completo), preservando modos de pago. */
   private async setProviderBillingTypes(
     providerId: number,
-    billingTypes: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[],
+    billingTypes: {
+      id: number;
+      modo_pago_a_ids?: number[];
+      modo_pago_b_ids?: number[];
+      anticipado_a?: boolean;
+      contra_entrega_a?: boolean;
+      anticipado_b?: boolean;
+      contra_entrega_b?: boolean;
+    }[],
   ): Promise<void> {
     await this.providerBillingRepo.delete({ provider_id: providerId });
 
@@ -184,6 +192,10 @@ export class ProvidersService {
         billing_type_id: bt.id,
         modo_pago_a_ids: bt.modo_pago_a_ids ?? [],
         modo_pago_b_ids: bt.modo_pago_b_ids ?? [],
+        anticipado_a: bt.anticipado_a ?? false,
+        contra_entrega_a: bt.contra_entrega_a ?? false,
+        anticipado_b: bt.anticipado_b ?? false,
+        contra_entrega_b: bt.contra_entrega_b ?? false,
       }),
     );
     await this.providerBillingRepo.save(records);

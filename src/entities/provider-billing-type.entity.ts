@@ -23,6 +23,18 @@ export class ProviderBillingType {
   @Column({ type: 'simple-array', nullable: true })
   modo_pago_b_ids: number[];
 
+  @Column({ type: 'boolean', default: false })
+  anticipado_a: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  contra_entrega_a: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  anticipado_b: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  contra_entrega_b: boolean;
+
   @ManyToOne(() => PurchasesProvider, (p) => p.billing_types, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'provider_id' })
   provider: PurchasesProvider;

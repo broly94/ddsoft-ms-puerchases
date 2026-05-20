@@ -86,7 +86,7 @@ export class ProvidersController {
     plazo_pago_b_dias?: number;
     objetivo?: number;
     observaciones?: string;
-    billing_types_config?: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[] }[];
+    billing_types_config?: { id: number; modo_pago_a_ids?: number[]; modo_pago_b_ids?: number[]; anticipado_a?: boolean; contra_entrega_a?: boolean; anticipado_b?: boolean; contra_entrega_b?: boolean }[];
     updated_by?: number;
   }) {
     const { id, ...rest } = data;
