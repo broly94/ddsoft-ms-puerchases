@@ -57,6 +57,38 @@ export class OrdenCompraHeader {
   @Column({ type: 'varchar', length: 20, default: 'pendiente' })
   estado: string;
 
+  // Plazos de pago estructurados (días, de la config del proveedor)
+  @Column({ nullable: true })
+  plazo_pago_a_dias: number | null;
+
+  @Column({ nullable: true })
+  plazo_pago_b_dias: number | null;
+
+  // Pronto pago
+  @Column({ type: 'boolean', default: false })
+  pronto_pago: boolean;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  pronto_pago_pct: number | null;
+
+  // Tipo de facturación estructurado (FK a billing_types)
+  @Column({ nullable: true })
+  billing_type_id: number | null;
+
+  // Momento de pago por parte (anticipado | contra_entrega | null)
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  momento_a: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  momento_b: string | null;
+
+  // Modos de pago por parte (IDs separados por coma)
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  modo_pago_a_ids: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  modo_pago_b_ids: string | null;
+
   @Column({ nullable: true })
   turno_id: number | null;
 

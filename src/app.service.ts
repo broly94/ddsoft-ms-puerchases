@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
 import { TurnoHeader } from './entities/turno-header.entity';
 import { Turno } from './entities/turno.entity';
+import { PurchasesProvider } from './entities/purchases-provider.entity';
+import { ProviderBillingType } from './entities/provider-billing-type.entity';
 
 @Injectable()
 export class AppService {
@@ -23,6 +25,10 @@ export class AppService {
     private turnoHeaderRepository: Repository<TurnoHeader>,
     @InjectRepository(Turno)
     private turnoRepository: Repository<Turno>,
+    @InjectRepository(PurchasesProvider)
+    private providerRepository: Repository<PurchasesProvider>,
+    @InjectRepository(ProviderBillingType)
+    private providerBillingRepository: Repository<ProviderBillingType>,
   ) {}
 
   getHello(): string {
@@ -117,11 +123,27 @@ export class AppService {
     }
 
     const orders = await this.ordenCompraRepository.findByIds(ids);
+
+    // Determinar si cada proveedor tiene CE configurado en alguna parte de sus billing types
+    const uniqueCods = [...new Set(orders.map(o => o.cod_proveedor).filter(Boolean))];
+    const providerCeMap = new Map<string, boolean>();
+    if (uniqueCods.length > 0) {
+      const providers = await this.providerRepository.find({
+        where: { cod_proveedor: In(uniqueCods) },
+        relations: ['billing_types'],
+      });
+      for (const p of providers) {
+        const hasCe = p.billing_types?.some(bt => bt.contra_entrega_a || bt.contra_entrega_b) ?? false;
+        providerCeMap.set(p.cod_proveedor, hasCe);
+      }
+    }
+
     for (const o of orders) {
       const exists = await this.turnoRepository.findOne({
         where: { turno_header_id: header.id, orden_compra_id: o.id_orden_compra },
       });
       const confirmed = pallets?.[o.id_orden_compra];
+      const contraEntregaDefault = providerCeMap.get(o.cod_proveedor) ?? false;
       if (!exists) {
         await this.turnoRepository.save(
           this.turnoRepository.create({
@@ -129,6 +151,7 @@ export class AppService {
             orden_compra_id: o.id_orden_compra,
             estado: 'pendiente',
             pallets_confirmados: confirmed != null ? confirmed : null,
+            contra_entrega: contraEntregaDefault,
             created_by: userId,
             updated_by: userId,
           }),
