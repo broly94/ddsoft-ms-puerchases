@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { TipoPago } from './tipo-pago.entity';
+import { OrdenCompraItem } from './orden-compra-item.entity';
 
 @Entity('orden_compra_header')
 export class OrdenCompraHeader {
@@ -91,6 +92,15 @@ export class OrdenCompraHeader {
 
   @Column({ nullable: true })
   turno_id: number | null;
+
+  // Pedido genérico de carga manual (faltantes de proveedor). Se puede turnar
+  // pero queda excluido del promedio de entrega del proveedor.
+  @Column({ type: 'boolean', default: false })
+  es_generico: boolean;
+
+  // Líneas de detalle de productos. Una orden = una condición de facturación (billing_type_id).
+  @OneToMany(() => OrdenCompraItem, (item) => item.orden_compra, { cascade: true })
+  items: OrdenCompraItem[];
 
   @Column({ nullable: true })
   created_by: number;

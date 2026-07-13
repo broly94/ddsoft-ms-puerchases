@@ -7,6 +7,7 @@ import { AppController } from './app.controller';
 import { SearchModule } from './search/search.module';
 import { PdfImportService } from './analysis/pdf-import.service';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
+import { OrdenCompraItem } from './entities/orden-compra-item.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
@@ -40,7 +41,7 @@ import { ProvidersService } from './providers/providers.service';
       }),
     }),
     TypeOrmModule.forFeature([
-      OrdenCompraHeader, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno,
+      OrdenCompraHeader, OrdenCompraItem, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno,
       BillingType, PurchasesProvider, ProviderBillingType, ProductBillingAssignment,
     ]),
     SearchModule,

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
+import { OrdenCompraItem } from './entities/orden-compra-item.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
@@ -15,6 +16,8 @@ export class AppService {
   constructor(
     @InjectRepository(OrdenCompraHeader)
     private ordenCompraRepository: Repository<OrdenCompraHeader>,
+    @InjectRepository(OrdenCompraItem)
+    private ordenCompraItemRepository: Repository<OrdenCompraItem>,
     @InjectRepository(PedidoHistorico)
     private pedidoHistoricoRepository: Repository<PedidoHistorico>,
     @InjectRepository(TipoPago)
@@ -60,6 +63,76 @@ export class AppService {
     const result = await this.ordenCompraRepository.delete(id);
     if (result.affected === 0) throw new NotFoundException(`Order ${id} not found`);
     return { success: true };
+  }
+
+  // ── Orden Compra Items (detalle de productos) ────────────────────────────
+
+  async getOrderItems(ordenId: number) {
+    return this.ordenCompraItemRepository.find({
+      where: { orden_compra_id: ordenId },
+      order: { id: 'ASC' },
+    });
+  }
+
+  /**
+   * Reemplaza el set completo de líneas de una orden (bulk replace) y recalcula
+   * cantidad_pallets (Σ ceil(bultos/bxp)) y monto (Σ subtotal) en el header.
+   * Una orden = una condición de facturación: el billing_type_id del header se
+   * ajusta al de las líneas.
+   */
+  async saveOrderItems(ordenId: number, items: any[], userId: number) {
+    const header = await this.ordenCompraRepository.findOneBy({ id_orden_compra: ordenId });
+    if (!header) throw new NotFoundException(`Orden ${ordenId} no encontrada`);
+
+    const normalized = (items ?? []).map((it) => {
+      const cantidad = Number(it.cantidad_bultos) || 0;
+      const uxb = parseInt(it.uxb_compra) || 1;
+      const bxp = parseInt(it.bxp) || 1;
+      const precio = Number(it.precio_costo) || 0;
+      const subtotal = cantidad * uxb * precio;
+      return {
+        orden_compra_id: ordenId,
+        cod_articulo: String(it.cod_articulo),
+        descripcion: it.descripcion ?? null,
+        marca: it.marca ?? null,
+        linea: it.linea != null ? parseInt(it.linea) : null,
+        cantidad_bultos: cantidad,
+        uxb_compra: uxb,
+        bxp,
+        precio_costo: precio,
+        billing_type_id: it.billing_type_id != null ? Number(it.billing_type_id) : null,
+        pct_a: it.pct_a != null ? Number(it.pct_a) : null,
+        pct_b: it.pct_b != null ? Number(it.pct_b) : null,
+        subtotal,
+        venta_diaria_bultos: it.venta_diaria_bultos != null ? Number(it.venta_diaria_bultos) : null,
+        compra_sugerida_bultos: it.compra_sugerida_bultos != null ? parseInt(it.compra_sugerida_bultos) : null,
+        dias_stock_restantes: it.dias_stock_restantes != null ? parseInt(it.dias_stock_restantes) : null,
+        created_by: userId,
+        updated_by: userId,
+      };
+    });
+
+    await this.ordenCompraItemRepository.manager.transaction(async (mgr) => {
+      await mgr.delete(OrdenCompraItem, { orden_compra_id: ordenId });
+      if (normalized.length) {
+        await mgr.save(OrdenCompraItem, normalized.map((n) => mgr.create(OrdenCompraItem, n)));
+      }
+
+      // Recalcular header desde el detalle
+      const totalPallets = normalized.reduce((s, n) => s + Math.ceil(n.cantidad_bultos / (n.bxp || 1)), 0);
+      const totalMonto = normalized.reduce((s, n) => s + n.subtotal, 0);
+      const condicion = normalized.find((n) => n.billing_type_id != null)?.billing_type_id ?? header.billing_type_id;
+
+      if (normalized.length) {
+        header.cantidad_pallets = String(totalPallets);
+        header.monto = totalMonto;
+      }
+      if (condicion != null) header.billing_type_id = condicion;
+      header.updated_by = userId;
+      await mgr.save(OrdenCompraHeader, header);
+    });
+
+    return this.getOrderItems(ordenId);
   }
 
   // ── Turno Config ─────────────────────────────────────────────────────────
@@ -552,6 +625,9 @@ export class AppService {
         .select(['oc.id_orden_compra', 'oc.cod_proveedor', 'oc.razon_social', 'oc.fecha_pedido'])
         .innerJoin('turnos', 't', 't.orden_compra_id = oc.id_orden_compra AND t.estado = :estado', { estado: 'entregado' })
         .where('oc.cod_proveedor IS NOT NULL')
+        // Los pedidos genéricos (faltantes de carga manual) no representan un pedido
+        // real al proveedor, así que no deben distorsionar el promedio de entrega.
+        .andWhere('oc.es_generico = false')
         .distinct(true)
         .getMany(),
       this.pedidoHistoricoRepository.find({

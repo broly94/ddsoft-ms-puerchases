@@ -33,6 +33,21 @@ export class AppController {
   @Delete('orders/:id')
   deleteOrder(@Param('id') id: string) { return this.appService.deleteOrder(+id); }
 
+  // ── Detalle de productos de la orden ──────────────────────────────────────
+
+  @Get('orders/:id/items')
+  getOrderItems(@Param('id') id: string) { return this.appService.getOrderItems(+id); }
+
+  /** Reemplaza el set completo de líneas y recalcula pallets/monto del header. */
+  @Put('orders/:id/items')
+  saveOrderItems(
+    @Param('id') id: string,
+    @Body() body: { items: any[] },
+    @Headers('x-user-id') userId: string,
+  ) {
+    return this.appService.saveOrderItems(+id, body.items, +userId);
+  }
+
   // ── Turno Config ──────────────────────────────────────────────────────────
 
   @Get('turnos/config')
