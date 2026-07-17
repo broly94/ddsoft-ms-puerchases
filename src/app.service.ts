@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
 import { OrdenCompraItem } from './entities/orden-compra-item.entity';
+import { OrdenCompraCambio } from './entities/orden-compra-cambio.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
@@ -10,6 +11,7 @@ import { TurnoHeader } from './entities/turno-header.entity';
 import { Turno } from './entities/turno.entity';
 import { PurchasesProvider } from './entities/purchases-provider.entity';
 import { ProviderBillingType } from './entities/provider-billing-type.entity';
+import { PurchasesConfig } from './entities/purchases-config.entity';
 
 @Injectable()
 export class AppService {
@@ -18,6 +20,8 @@ export class AppService {
     private ordenCompraRepository: Repository<OrdenCompraHeader>,
     @InjectRepository(OrdenCompraItem)
     private ordenCompraItemRepository: Repository<OrdenCompraItem>,
+    @InjectRepository(OrdenCompraCambio)
+    private ordenCompraCambioRepository: Repository<OrdenCompraCambio>,
     @InjectRepository(PedidoHistorico)
     private pedidoHistoricoRepository: Repository<PedidoHistorico>,
     @InjectRepository(TipoPago)
@@ -32,7 +36,40 @@ export class AppService {
     private providerRepository: Repository<PurchasesProvider>,
     @InjectRepository(ProviderBillingType)
     private providerBillingRepository: Repository<ProviderBillingType>,
+    @InjectRepository(PurchasesConfig)
+    private purchasesConfigRepository: Repository<PurchasesConfig>,
   ) {}
+
+  // ── Configuración de Compras (singleton id=1) ─────────────────────────────
+
+  async getPurchasesConfig(): Promise<PurchasesConfig> {
+    let cfg = await this.purchasesConfigRepository.findOneBy({ id: 1 });
+    if (!cfg) {
+      cfg = this.purchasesConfigRepository.create({ id: 1 });
+      cfg = await this.purchasesConfigRepository.save(cfg);
+    }
+    return cfg;
+  }
+
+  async updatePurchasesConfig(data: Partial<PurchasesConfig>, userId?: number): Promise<PurchasesConfig> {
+    const cfg = await this.getPurchasesConfig();
+    const num = (v: any, d: number) => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? d : Number(v));
+    cfg.iva_general = num(data.iva_general, cfg.iva_general);
+    cfg.percep_iva = num(data.percep_iva, cfg.percep_iva);
+    cfg.percep_iibb_bsas = num(data.percep_iibb_bsas, cfg.percep_iibb_bsas);
+    cfg.percep_iibb_caba = num(data.percep_iibb_caba, cfg.percep_iibb_caba);
+    if (data.percep_iva_activo !== undefined) cfg.percep_iva_activo = !!data.percep_iva_activo;
+    if (data.percep_iibb_bsas_activo !== undefined) cfg.percep_iibb_bsas_activo = !!data.percep_iibb_bsas_activo;
+    if (data.percep_iibb_caba_activo !== undefined) cfg.percep_iibb_caba_activo = !!data.percep_iibb_caba_activo;
+    const POLICIES = ['todos', 'creador_mod_admin', 'mod_admin', 'admin'];
+    if (data.orden_edit_policy && POLICIES.includes(data.orden_edit_policy)) cfg.orden_edit_policy = data.orden_edit_policy;
+    if (data.orden_delete_policy && POLICIES.includes(data.orden_delete_policy)) cfg.orden_delete_policy = data.orden_delete_policy;
+    if (data.multiplo_activo !== undefined) cfg.multiplo_activo = !!data.multiplo_activo;
+    cfg.multiplo_bultos = Math.max(1, parseInt(String(data.multiplo_bultos ?? cfg.multiplo_bultos)) || cfg.multiplo_bultos);
+    if (Array.isArray(data.iva_producto_overrides)) cfg.iva_producto_overrides = data.iva_producto_overrides;
+    cfg.updated_by = userId ?? cfg.updated_by ?? null;
+    return this.purchasesConfigRepository.save(cfg);
+  }
 
   getHello(): string {
     return 'Hello from Purchases Microservice!';
@@ -47,22 +84,159 @@ export class AppService {
     });
   }
 
-  async createOrder(data: Partial<OrdenCompraHeader>) {
+  /** Orden completa (header + cambios) para precargar el wizard en modo edición. */
+  async findOrderById(id: number) {
+    const order = await this.ordenCompraRepository.findOne({
+      where: { id_orden_compra: id },
+      relations: ['tipo_pago', 'cambios'],
+    });
+    if (!order) throw new NotFoundException(`Orden ${id} no encontrada`);
+    return order;
+  }
+
+  async createOrder(data: Partial<OrdenCompraHeader>, userId?: number) {
     const order = this.ordenCompraRepository.create(data);
+    // Estampar quién la creó: la política "creador" depende de este campo, y hasta
+    // ahora quedaba null (el create ignoraba el x-user-id). Ver docs/plan-orden-compra-permisos.md
+    if (userId) { order.created_by = userId; order.updated_by = userId; }
     return this.ordenCompraRepository.save(order);
   }
 
-  async updateOrder(id: number, data: Partial<OrdenCompraHeader>) {
+  // ── Permisos de órdenes (editar/borrar) ───────────────────────────────────
+  /** admin y supervisor = tier "administrador" (siempre pueden). */
+  private esAdminTier = (role?: string) => role === 'admin' || role === 'supervisor';
+
+  /**
+   * ¿El usuario puede la acción sobre la orden, según la política de config?
+   * policy: 'todos' | 'creador_mod_admin' | 'mod_admin' | 'admin'.
+   */
+  private cumplePolitica(policy: string, order: OrdenCompraHeader, userId?: number, role?: string): boolean {
+    if (this.esAdminTier(role)) return true;
+    const esCreador = order.created_by != null && order.created_by === userId;
+    switch (policy) {
+      case 'todos': return true;
+      case 'creador_mod_admin': return esCreador || role === 'moderator';
+      case 'mod_admin': return role === 'moderator';
+      case 'admin': return false; // admin/supervisor ya devolvieron true arriba
+      default: return true;
+    }
+  }
+
+  /** Enforcement de EDICIÓN. Los borradores están exentos (crear/armar la orden es libre). */
+  private async assertPuedeEditar(order: OrdenCompraHeader, userId?: number, role?: string) {
+    if (order.estado === 'borrador') return; // creación en curso, no es "editar"
+    const cfg = await this.getPurchasesConfig();
+    if (!this.cumplePolitica(cfg.orden_edit_policy || 'creador_mod_admin', order, userId, role)) {
+      throw new ForbiddenException('No tenés permiso para editar esta orden.');
+    }
+  }
+
+  /** Enforcement de BORRADO. El creador puede descartar su propio borrador siempre. */
+  private async assertPuedeBorrar(order: OrdenCompraHeader, userId?: number, role?: string) {
+    if (order.estado === 'borrador' && order.created_by != null && order.created_by === userId) return;
+    const cfg = await this.getPurchasesConfig();
+    if (!this.cumplePolitica(cfg.orden_delete_policy || 'mod_admin', order, userId, role)) {
+      throw new ForbiddenException('No tenés permiso para borrar esta orden.');
+    }
+  }
+
+  /**
+   * Marca de edición: se estampa SÓLO si la orden ya salió de 'borrador' (o sea, ya
+   * fue confirmada). Editar un borrador es "seguir armándolo", no "editar una orden".
+   * Crear/confirmar por el wizard NO cuenta como edición aunque toque el header.
+   * Se chequea el estado GUARDADO (antes de aplicar los cambios de este request).
+   */
+  private stampEditIfConfirmed(order: OrdenCompraHeader, estadoGuardado: string) {
+    if (estadoGuardado && estadoGuardado !== 'borrador') {
+      order.fecha_ultima_edicion = new Date();
+    }
+  }
+
+  async updateOrder(id: number, data: Partial<OrdenCompraHeader>, userId?: number, role?: string) {
     const order = await this.ordenCompraRepository.findOneBy({ id_orden_compra: id });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
+    await this.assertPuedeEditar(order, userId, role);
+    const estadoGuardado = order.estado;
+    if (userId) order.updated_by = userId;
     Object.assign(order, data);
+    // El monto (= total facturado) depende de los % de facturación, que se editan en
+    // el Paso 3 → hay que recalcularlo desde las líneas o quedaría stale.
+    // Sin líneas no se toca: puede ser una orden con monto cargado a mano.
+    const items = await this.ordenCompraItemRepository.find({ where: { orden_compra_id: id } });
+    if (items.length) order.monto = this.montoFacturado(order, items);
+    this.stampEditIfConfirmed(order, estadoGuardado);
     return this.ordenCompraRepository.save(order);
   }
 
-  async deleteOrder(id: number) {
-    const result = await this.ordenCompraRepository.delete(id);
-    if (result.affected === 0) throw new NotFoundException(`Order ${id} not found`);
+  async deleteOrder(id: number, userId?: number, role?: string) {
+    const order = await this.ordenCompraRepository.findOneBy({ id_orden_compra: id });
+    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    await this.assertPuedeBorrar(order, userId, role);
+    await this.ordenCompraRepository.delete(id);
     return { success: true };
+  }
+
+  /**
+   * Confirma una orden (borrador → pendiente) y estampa en el proveedor los % con
+   * los que se facturó, para que arranquen la próxima orden de ese proveedor.
+   *
+   * OJO con el estado: confirmar deja la orden en **'pendiente'**, que es lo que
+   * Turnos entiende por "lista para turnar" (su tab Sin Turnar filtra
+   * `estado === 'pendiente' || 'rechazado'`). El ciclo real es:
+   *   borrador → pendiente → turnado → (entregado/no_entregado viven en turnos.estado)
+   * NO usar un estado 'confirmada': nadie lo lee y la orden queda invisible para
+   * Turnos, o sea imposible de turnar. 'borrador' es el único estado que agregó el
+   * wizard; el resto de la máquina es la de siempre.
+   * Estado + estampado van en la misma transacción: no puede quedar una orden
+   * confirmada sin memoria, ni memoria de una orden que no se confirmó.
+   *
+   * NO se estampa si la orden es genérica (no tiene facturación) o si el proveedor
+   * no está registrado en DDSoft (existe en Gescom pero no acá → no hay dónde guardar).
+   * Ver docs/plan-orden-compra-precios-facturacion.md §5
+   */
+  async confirmOrder(id: number, userId: number, role?: string) {
+    const order = await this.ordenCompraRepository.findOneBy({ id_orden_compra: id });
+    if (!order) throw new NotFoundException(`Orden ${id} no encontrada`);
+    await this.assertPuedeEditar(order, userId, role); // no-op para borrador (confirmar = fin de creación)
+
+    await this.ordenCompraRepository.manager.transaction(async (mgr) => {
+      // 'pendiente' = confirmada y esperando turno. Es el estado que lee Turnos.
+      order.estado = 'pendiente';
+      order.updated_by = userId;
+      // Red de seguridad: al confirmar, el monto del historial queda fijo. Si por lo
+      // que sea llegó stale (confirm directo por API sin pasar por el wizard), se
+      // recalcula acá para no dejar un número mentiroso en el historial.
+      const items = await mgr.find(OrdenCompraItem, { where: { orden_compra_id: id } });
+      if (items.length) order.monto = this.montoFacturado(order, items);
+      await mgr.save(OrdenCompraHeader, order);
+
+      if (order.es_generico || !order.cod_proveedor) return;
+      // Sin facturación definida no hay nada que recordar. Estampar acá guardaría
+      // un snapshot de ceros y la PRÓXIMA orden del proveedor arrancaría con 0% de
+      // IVA en silencio: la memoria quedaría envenenada por una orden que nunca
+      // definió sus %. Pasa con borradores anteriores a esta feature.
+      if (order.iva_a_pct == null) return;
+
+      // La orden guarda el código de Gescom, no el id_provider de DDSoft.
+      const provider = await mgr.findOneBy(PurchasesProvider, { cod_proveedor: order.cod_proveedor });
+      if (!provider) return;
+
+      const pct = (v: any): number | null => (v === null || v === undefined ? null : Number(v));
+      provider.ultima_facturacion = {
+        iva_a_pct: pct(order.iva_a_pct) ?? 0,
+        percep_iva: { activo: !!order.percep_iva_activo, pct: pct(order.percep_iva_pct) },
+        percep_iibb_bsas: { activo: !!order.percep_iibb_bsas_activo, pct: pct(order.percep_iibb_bsas_pct) },
+        percep_iibb_caba: { activo: !!order.percep_iibb_caba_activo, pct: pct(order.percep_iibb_caba_pct) },
+        iva_b_activo: !!order.iva_b_activo,
+        iva_b_pct: pct(order.iva_b_pct),
+      };
+      provider.ultima_facturacion_orden_id = order.id_orden_compra;
+      provider.ultima_facturacion_fecha = new Date();
+      provider.updated_by = userId;
+      await mgr.save(PurchasesProvider, provider);
+    });
+
+    return this.findOrderById(id);
   }
 
   // ── Orden Compra Items (detalle de productos) ────────────────────────────
@@ -75,14 +249,76 @@ export class AppService {
   }
 
   /**
+   * `monto` del header = TOTAL FACTURADO: lo que va a facturar el proveedor.
+   * Es el número que muestra el historial de órdenes.
+   *
+   *   neto    = Σ (cantidad_bultos × uxb_compra × precio_costo)   ← precio_costo es NETO
+   *   Parte A = neto × cond_pct_a/100 × (1 + (iva_a_pct + Σ percep. activas)/100)
+   *   Parte B = neto × cond_pct_b/100 × (1 + (iva_b_activo ? iva_b_pct : 0)/100)
+   *
+   * Los % van sobre el VALORIZADO FINAL de cada parte, no producto por producto.
+   * El reparto A/B sale del snapshot pct_a/pct_b de las líneas (una orden = una condición).
+   *
+   * Casos borde:
+   *  - Genérico: no tiene condición ni facturación → todo Parte A y, como sus % de
+   *    facturación quedan en null, el total termina siendo el neto.
+   *  - Orden sin condición (proveedor sin billing types): se asume 100% Parte A.
+   *  - Orden vieja anterior a la migración de facturación (iva_a_pct null): los % dan 0
+   *    y el monto degrada al neto, que es lo que mostraba antes.
+   *
+   * Ver docs/plan-orden-compra-precios-facturacion.md §3
+   */
+  private montoFacturado(
+    header: OrdenCompraHeader,
+    items: { cantidad_bultos: number; uxb_compra: number; precio_costo: number; pct_a: number | null; pct_b: number | null }[],
+  ): number {
+    const n = (v: any): number => Number(v) || 0;
+    const neto = items.reduce((s, i) => s + n(i.cantidad_bultos) * n(i.uxb_compra) * n(i.precio_costo), 0);
+
+    let condA = header.es_generico ? 100 : n(items.find((i) => i.pct_a != null)?.pct_a);
+    let condB = header.es_generico ? 0 : n(items.find((i) => i.pct_b != null)?.pct_b);
+    // Sin condición (o pct en cero) → todo se factura: si no, el monto daría 0.
+    if (condA + condB === 0) { condA = 100; condB = 0; }
+
+    const pctA =
+      n(header.iva_a_pct) +
+      (header.percep_iva_activo ? n(header.percep_iva_pct) : 0) +
+      (header.percep_iibb_bsas_activo ? n(header.percep_iibb_bsas_pct) : 0) +
+      (header.percep_iibb_caba_activo ? n(header.percep_iibb_caba_pct) : 0);
+    const pctB = header.iva_b_activo ? n(header.iva_b_pct) : 0;
+
+    const totalA = ((neto * condA) / 100) * (1 + pctA / 100);
+    const totalB = ((neto * condB) / 100) * (1 + pctB / 100);
+    let total = totalA + totalB;
+
+    // Pronto pago: descuento sobre la facturación final. La base la decide la orden:
+    // 'neto' (valorizado sin IVA) o 'total' (facturado c/IVA). El monto del historial
+    // ya queda con el descuento aplicado. Ver docs/plan-orden-compra-datos-pago.md
+    if (header.pronto_pago && header.pronto_pago_pct) {
+      const pp = n(header.pronto_pago_pct);
+      const base = header.pronto_pago_base === 'neto' ? neto : total;
+      total -= (base * pp) / 100;
+    }
+
+    return Math.round(total * 100) / 100;
+  }
+
+  /**
    * Reemplaza el set completo de líneas de una orden (bulk replace) y recalcula
-   * cantidad_pallets (Σ ceil(bultos/bxp)) y monto (Σ subtotal) en el header.
+   * cantidad_pallets y monto (= total facturado) en el header.
    * Una orden = una condición de facturación: el billing_type_id del header se
    * ajusta al de las líneas.
+   *
+   * OJO con bonificación: `cantidad_bultos` son los PAGADOS y `bonif_bultos` lo gratis.
+   *  - El valorizado (subtotal, monto) sale de los PAGADOS: lo gratis no se factura.
+   *  - Los PALLETS salen de los RECIBIDOS (pagados + gratis): lo gratis ocupa lugar en
+   *    el camión. cantidad_pallets alimenta la capacidad diaria de Turnos.
+   * Ver docs/plan-orden-compra-bonificaciones.md
    */
-  async saveOrderItems(ordenId: number, items: any[], userId: number) {
+  async saveOrderItems(ordenId: number, items: any[], userId: number, role?: string) {
     const header = await this.ordenCompraRepository.findOneBy({ id_orden_compra: ordenId });
     if (!header) throw new NotFoundException(`Orden ${ordenId} no encontrada`);
+    await this.assertPuedeEditar(header, userId, role);
 
     const normalized = (items ?? []).map((it) => {
       const cantidad = Number(it.cantidad_bultos) || 0;
@@ -90,6 +326,21 @@ export class AppService {
       const bxp = parseInt(it.bxp) || 1;
       const precio = Number(it.precio_costo) || 0;
       const subtotal = cantidad * uxb * precio;
+      const bonifBultos = Math.max(0, Number(it.bonif_bultos) || 0);
+      // La bonificación del proveedor es un PAR: media regla no significa nada y
+      // haría dividir por cero al recalcular. Sin par válido no hay snapshot.
+      const bc = parseInt(it.bonif_compra);
+      const bb = parseInt(it.bonif_bonifica);
+      const parValido = !isNaN(bc) && !isNaN(bb) && bc > 0 && bb > 0;
+      // El origen dice DE DÓNDE sale la bonificación, no si AHORA da bultos gratis:
+      // una línea con regla 20+5 y 10 bultos pagados tiene 0 gratis pero la regla
+      // sigue vigente (si suben a 20, recalcula). Anular el origen acá la desengancharía.
+      // 'proveedor' exige regla válida; 'manual' es un valor fijo y exige bultos.
+      const origenIn = it.bonif_origen === 'manual' || it.bonif_origen === 'proveedor' ? it.bonif_origen : null;
+      const origen =
+        origenIn === 'proveedor' ? (parValido ? 'proveedor' : null)
+        : origenIn === 'manual' ? (bonifBultos > 0 ? 'manual' : null)
+        : null;
       return {
         orden_compra_id: ordenId,
         cod_articulo: String(it.cod_articulo),
@@ -104,6 +355,11 @@ export class AppService {
         pct_a: it.pct_a != null ? Number(it.pct_a) : null,
         pct_b: it.pct_b != null ? Number(it.pct_b) : null,
         subtotal,
+        bonif_bultos: bonifBultos,
+        bonif_compra: parValido ? bc : null,
+        bonif_bonifica: parValido ? bb : null,
+        bonif_origen: origen,
+        ajustado_por_bonif: bonifBultos > 0 && !!it.ajustado_por_bonif,
         venta_diaria_bultos: it.venta_diaria_bultos != null ? Number(it.venta_diaria_bultos) : null,
         compra_sugerida_bultos: it.compra_sugerida_bultos != null ? parseInt(it.compra_sugerida_bultos) : null,
         dias_stock_restantes: it.dias_stock_restantes != null ? parseInt(it.dias_stock_restantes) : null,
@@ -118,21 +374,76 @@ export class AppService {
         await mgr.save(OrdenCompraItem, normalized.map((n) => mgr.create(OrdenCompraItem, n)));
       }
 
-      // Recalcular header desde el detalle
-      const totalPallets = normalized.reduce((s, n) => s + Math.ceil(n.cantidad_bultos / (n.bxp || 1)), 0);
-      const totalMonto = normalized.reduce((s, n) => s + n.subtotal, 0);
+      // Recalcular header desde el detalle.
+      // Pallets sobre los RECIBIDOS (pagados + bonificados): lo gratis también ocupa
+      // lugar en el camión y en el depósito. Sin bonificación, bonif_bultos = 0 y
+      // el resultado es idéntico al de antes.
+      const totalPallets = normalized.reduce(
+        (s, n) => s + Math.ceil((n.cantidad_bultos + n.bonif_bultos) / (n.bxp || 1)),
+        0,
+      );
       const condicion = normalized.find((n) => n.billing_type_id != null)?.billing_type_id ?? header.billing_type_id;
 
       if (normalized.length) {
         header.cantidad_pallets = String(totalPallets);
-        header.monto = totalMonto;
+        header.monto = this.montoFacturado(header, normalized);
       }
       if (condicion != null) header.billing_type_id = condicion;
       header.updated_by = userId;
+      // Cambiar los ítems de una orden ya confirmada cuenta como edición.
+      this.stampEditIfConfirmed(header, header.estado);
       await mgr.save(OrdenCompraHeader, header);
     });
 
     return this.getOrderItems(ordenId);
+  }
+
+  // ── Cambios / Devoluciones de la orden (Paso 1 del wizard) ────────────────
+
+  async getOrderCambios(ordenId: number) {
+    return this.ordenCompraCambioRepository.find({
+      where: { orden_compra_id: ordenId },
+      order: { id: 'ASC' },
+    });
+  }
+
+  /**
+   * Reemplaza el set completo de cambios/devoluciones de una orden (bulk replace).
+   * Ajusta el flag tiene_cambios del header según haya líneas o no.
+   */
+  async saveOrderCambios(ordenId: number, cambios: any[], userId: number, role?: string) {
+    const header = await this.ordenCompraRepository.findOneBy({ id_orden_compra: ordenId });
+    if (!header) throw new NotFoundException(`Orden ${ordenId} no encontrada`);
+    await this.assertPuedeEditar(header, userId, role);
+
+    const normalized = (cambios ?? []).map((c) => ({
+      orden_compra_id: ordenId,
+      cod_articulo: String(c.cod_articulo),
+      descripcion: c.descripcion ?? null,
+      cantidad_unidades: Number(c.cantidad_unidades) || 0,
+      uxb: parseInt(c.uxb) || 1,
+      tipo: c.tipo === 'devolucion' ? 'devolucion' : 'cambio',
+      motivo: c.motivo ? String(c.motivo).slice(0, 255) : null,
+      precio_costo: Number(c.precio_costo) || 0,
+      billing_type_id: c.billing_type_id != null ? Number(c.billing_type_id) : null,
+      pct_a: c.pct_a != null ? Number(c.pct_a) : null,
+      pct_b: c.pct_b != null ? Number(c.pct_b) : null,
+      tipo_facturacion: c.tipo_facturacion ? String(c.tipo_facturacion).slice(0, 255) : null,
+      created_by: userId,
+    }));
+
+    await this.ordenCompraCambioRepository.manager.transaction(async (mgr) => {
+      await mgr.delete(OrdenCompraCambio, { orden_compra_id: ordenId });
+      if (normalized.length) {
+        await mgr.save(OrdenCompraCambio, normalized.map((n) => mgr.create(OrdenCompraCambio, n)));
+      }
+      header.tiene_cambios = normalized.length > 0;
+      header.updated_by = userId;
+      this.stampEditIfConfirmed(header, header.estado);
+      await mgr.save(OrdenCompraHeader, header);
+    });
+
+    return this.getOrderCambios(ordenId);
   }
 
   // ── Turno Config ─────────────────────────────────────────────────────────

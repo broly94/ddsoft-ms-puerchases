@@ -234,10 +234,20 @@ export class ProvidersService {
    * Asigna o actualiza el tipo de facturación de un artículo dentro de un proveedor.
    * El billing_type_id debe estar dentro de los tipos que acepta el proveedor.
    */
+  /**
+   * Upsert de la config de un artículo del proveedor: tipo de facturación + bonificación.
+   * Los campos de bonificación sólo se tocan si vienen definidos (`!== undefined`):
+   * asignar un tipo de facturación NO pisa la bonificación, y setear la bonificación
+   * no exige re-mandar el resto. `null` explícito = borrar la bonificación.
+   */
   async upsertAssignment(data: {
     provider_id: number;
     cod_articulo: string;
     billing_type_id: number;
+    /** Comprando X bultos… (null = sin bonificación) */
+    bonif_compra?: number | null;
+    /** …te dan Y bultos gratis. */
+    bonif_bonifica?: number | null;
     created_by?: number;
     updated_by?: number;
   }): Promise<ProductBillingAssignment> {
@@ -255,13 +265,41 @@ export class ProvidersService {
       where: { provider_id: data.provider_id, cod_articulo: data.cod_articulo },
     });
 
+    const bonif = this.normalizeBonif(data.bonif_compra, data.bonif_bonifica);
+
     if (existing) {
       existing.billing_type_id = data.billing_type_id;
+      if (bonif) {
+        existing.bonif_compra = bonif.compra;
+        existing.bonif_bonifica = bonif.bonifica;
+      }
       existing.updated_by = data.updated_by ?? existing.updated_by;
       return this.assignmentRepo.save(existing);
     }
 
-    return this.assignmentRepo.save(this.assignmentRepo.create(data));
+    return this.assignmentRepo.save(this.assignmentRepo.create({
+      ...data,
+      ...(bonif ? { bonif_compra: bonif.compra, bonif_bonifica: bonif.bonifica } : {}),
+    }));
+  }
+
+  /**
+   * La bonificación es un par: sin las dos mitades no significa nada.
+   * Devuelve null si no vino ninguna (no tocar) y {null,null} si hay que borrarla.
+   * Un par incompleto o con ceros/negativos se guarda como "sin bonificación" en vez
+   * de dejar media bonificación que después haría dividir por cero al calcular.
+   */
+  private normalizeBonif(
+    compra: number | null | undefined,
+    bonifica: number | null | undefined,
+  ): { compra: number | null; bonifica: number | null } | null {
+    if (compra === undefined && bonifica === undefined) return null;
+    const c = Number(compra);
+    const b = Number(bonifica);
+    const valido = compra != null && bonifica != null && !isNaN(c) && !isNaN(b) && c > 0 && b > 0;
+    return valido
+      ? { compra: Math.trunc(c), bonifica: Math.trunc(b) }
+      : { compra: null, bonifica: null };
   }
 
   /**
@@ -324,5 +362,38 @@ export class ProvidersService {
 
   async deleteAssignment(providerId: number, codArticulo: string): Promise<void> {
     await this.assignmentRepo.delete({ provider_id: providerId, cod_articulo: codArticulo });
+  }
+
+  /**
+   * Aplica la misma bonificación a varios artículos de un proveedor.
+   * (null, null) = se la quita a todos.
+   *
+   * SÓLO actualiza artículos que YA tienen tipo de facturación asignado: la config
+   * vive en esa fila y `billing_type_id` es NOT NULL, así que no se puede crear una
+   * fila sólo con bonificación. Los que no lo tienen se informan en `skipped` en vez
+   * de fallar en silencio.
+   */
+  async bulkUpsertBonificacion(
+    providerId: number,
+    codArticulos: string[],
+    compra: number | null,
+    bonifica: number | null,
+    userId?: number,
+  ): Promise<{ updated: number; skipped: number }> {
+    if (!codArticulos?.length) return { updated: 0, skipped: 0 };
+
+    const bonif = this.normalizeBonif(compra, bonifica) ?? { compra: null, bonifica: null };
+    const existing = await this.assignmentRepo.find({
+      where: { provider_id: providerId, cod_articulo: In(codArticulos) },
+    });
+
+    for (const a of existing) {
+      a.bonif_compra = bonif.compra;
+      a.bonif_bonifica = bonif.bonifica;
+      a.updated_by = userId ?? a.updated_by;
+    }
+    if (existing.length) await this.assignmentRepo.save(existing);
+
+    return { updated: existing.length, skipped: codArticulos.length - existing.length };
   }
 }

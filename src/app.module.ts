@@ -8,9 +8,11 @@ import { SearchModule } from './search/search.module';
 import { PdfImportService } from './analysis/pdf-import.service';
 import { OrdenCompraHeader } from './entities/orden-compra-header.entity';
 import { OrdenCompraItem } from './entities/orden-compra-item.entity';
+import { OrdenCompraCambio } from './entities/orden-compra-cambio.entity';
 import { PedidoHistorico } from './entities/pedido-historico.entity';
 import { TipoPago } from './entities/tipo-pago.entity';
 import { TurnoConfig } from './entities/turno-config.entity';
+import { PurchasesConfig } from './entities/purchases-config.entity';
 import { TurnoHeader } from './entities/turno-header.entity';
 import { Turno } from './entities/turno.entity';
 import { BillingType } from './entities/billing-type.entity';
@@ -41,7 +43,7 @@ import { ProvidersService } from './providers/providers.service';
       }),
     }),
     TypeOrmModule.forFeature([
-      OrdenCompraHeader, OrdenCompraItem, PedidoHistorico, TipoPago, TurnoConfig, TurnoHeader, Turno,
+      OrdenCompraHeader, OrdenCompraItem, OrdenCompraCambio, PedidoHistorico, TipoPago, TurnoConfig, PurchasesConfig, TurnoHeader, Turno,
       BillingType, PurchasesProvider, ProviderBillingType, ProductBillingAssignment,
     ]),
     SearchModule,

@@ -34,9 +34,33 @@ export class OrdenCompraItem {
   @Column({ type: 'int', nullable: true })
   linea: number | null;
 
-  /** Cantidad pedida, en bultos. */
+  /** Cantidad PAGADA, en bultos. Lo que se paga y se factura (≠ lo que se recibe). */
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   cantidad_bultos: number;
+
+  // ── Bonificación: "comprando X bultos te dan Y de regalo" ────────────────
+  // pagados (cantidad_bultos) + bonif_bultos = RECIBIDOS.
+  // Los PALLETS salen de los recibidos (lo gratis ocupa lugar); el valorizado, de
+  // los pagados. Ver docs/plan-orden-compra-bonificaciones.md
+
+  /** Bultos que llegan gratis. No se pagan ni se facturan, pero ocupan pallet. */
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  bonif_bultos: number;
+
+  /** Snapshot de la regla aplicada (null si la bonificación se cargó a mano). */
+  @Column({ type: 'int', nullable: true })
+  bonif_compra: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  bonif_bonifica: number | null;
+
+  /** 'proveedor' (regla configurada) | 'manual' (cargada en esta orden). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  bonif_origen: string | null;
+
+  /** La cantidad la calculó la regla; se apaga si el usuario la edita a mano. */
+  @Column({ type: 'boolean', default: false })
+  ajustado_por_bonif: boolean;
 
   /** Unidades por bulto de compra (snapshot). */
   @Column({ type: 'int', default: 1 })

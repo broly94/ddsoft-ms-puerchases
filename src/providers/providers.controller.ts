@@ -110,6 +110,9 @@ export class ProvidersController {
     provider_id: number;
     cod_articulo: string;
     billing_type_id: number;
+    /** Bonificación: comprando X bultos te dan Y gratis. Omitidos = no se tocan. */
+    bonif_compra?: number | null;
+    bonif_bonifica?: number | null;
     created_by?: number;
     updated_by?: number;
   }) {
@@ -123,6 +126,20 @@ export class ProvidersController {
     user_id?: number;
   }) {
     return this.service.bulkUpsertAssignments(data.provider_id, data.items, data.user_id);
+  }
+
+  /** Misma bonificación para varios artículos. (null, null) = se la quita a todos. */
+  @MessagePattern({ cmd: 'providers.assignments.bulk_bonificacion' })
+  bulkUpsertBonificacion(@Payload() data: {
+    provider_id: number;
+    cod_articulos: string[];
+    bonif_compra: number | null;
+    bonif_bonifica: number | null;
+    user_id?: number;
+  }) {
+    return this.service.bulkUpsertBonificacion(
+      data.provider_id, data.cod_articulos, data.bonif_compra, data.bonif_bonifica, data.user_id,
+    );
   }
 
   @MessagePattern({ cmd: 'providers.assignments.delete' })

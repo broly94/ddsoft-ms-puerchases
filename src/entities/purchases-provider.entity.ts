@@ -2,6 +2,23 @@ import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { ProviderBillingType } from './provider-billing-type.entity';
 import { ProductBillingAssignment } from './product-billing-assignment.entity';
 
+/**
+ * Snapshot de los % con los que se facturó una orden. Se guarda entero en
+ * purchases_providers.ultima_facturacion y arranca la próxima orden del proveedor.
+ * Ver docs/plan-orden-compra-precios-facturacion.md §5
+ */
+export interface FacturacionSnapshot {
+  /** IVA de la Parte A (Factura). */
+  iva_a_pct: number;
+  /** Percepciones aplicadas a la Parte A (se suman al iva_a_pct). */
+  percep_iva: { activo: boolean; pct: number | null };
+  percep_iibb_bsas: { activo: boolean; pct: number | null };
+  percep_iibb_caba: { activo: boolean; pct: number | null };
+  /** Excepción: la Parte B (Remito) normalmente va sin IVA. */
+  iva_b_activo: boolean;
+  iva_b_pct: number | null;
+}
+
 @Entity('purchases_providers')
 export class PurchasesProvider {
   @PrimaryGeneratedColumn()
@@ -64,6 +81,25 @@ export class PurchasesProvider {
 
   @Column({ type: 'text', nullable: true })
   observaciones: string;
+
+  // ── Memoria de la última facturación ─────────────────────────────────────
+  // REGISTRO HISTÓRICO INMUTABLE: "así facturó realmente la última vez".
+  // Es el default con el que arranca la próxima orden del proveedor
+  // (cascada: proveedor.ultima_facturacion → purchases_config → hardcode).
+  // Los cambios de config NO se propagan acá — eso convertiría el campo en mentira
+  // y rompe la auditoría. Lo resuelve el selector de origen + diff en la orden.
+  // Se escribe SOLO al confirmar una orden (confirmOrder), nunca a mano.
+
+  /** Snapshot de los % de la última orden confirmada. Null = sin histórico → usa config. */
+  @Column({ type: 'jsonb', nullable: true })
+  ultima_facturacion: FacturacionSnapshot | null;
+
+  /** Orden que generó el snapshot (sin FK: si se borra, el hecho histórico sigue valiendo). */
+  @Column({ type: 'int', nullable: true })
+  ultima_facturacion_orden_id: number | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  ultima_facturacion_fecha: Date | null;
 
   @Column({ nullable: true })
   created_by: number;

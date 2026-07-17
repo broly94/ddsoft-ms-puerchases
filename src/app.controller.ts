@@ -22,16 +22,38 @@ export class AppController {
   @Get('orders')
   findAllOrders() { return this.appService.findAllOrders(); }
 
+  @Get('orders/:id')
+  findOrderById(@Param('id') id: string) { return this.appService.findOrderById(+id); }
+
   @Post('orders')
-  createOrder(@Body() data: any) { return this.appService.createOrder(data); }
+  createOrder(@Body() data: any, @Headers('x-user-id') userId: string) {
+    return this.appService.createOrder(data, userId ? +userId : undefined);
+  }
 
   @Put('orders/:id')
-  updateOrder(@Param('id') id: string, @Body() data: any) {
-    return this.appService.updateOrder(+id, data);
+  updateOrder(
+    @Param('id') id: string,
+    @Body() data: any,
+    @Headers('x-user-id') userId: string,
+    @Headers('x-user-role') role: string,
+  ) {
+    return this.appService.updateOrder(+id, data, userId ? +userId : undefined, role);
   }
 
   @Delete('orders/:id')
-  deleteOrder(@Param('id') id: string) { return this.appService.deleteOrder(+id); }
+  deleteOrder(
+    @Param('id') id: string,
+    @Headers('x-user-id') userId: string,
+    @Headers('x-user-role') role: string,
+  ) {
+    return this.appService.deleteOrder(+id, userId ? +userId : undefined, role);
+  }
+
+  /** Borrador → confirmada + estampa los % de facturación en el proveedor. */
+  @Post('orders/:id/confirm')
+  confirmOrder(@Param('id') id: string, @Headers('x-user-id') userId: string, @Headers('x-user-role') role: string) {
+    return this.appService.confirmOrder(+id, +userId, role);
+  }
 
   // ── Detalle de productos de la orden ──────────────────────────────────────
 
@@ -44,8 +66,35 @@ export class AppController {
     @Param('id') id: string,
     @Body() body: { items: any[] },
     @Headers('x-user-id') userId: string,
+    @Headers('x-user-role') role: string,
   ) {
-    return this.appService.saveOrderItems(+id, body.items, +userId);
+    return this.appService.saveOrderItems(+id, body.items, +userId, role);
+  }
+
+  // ── Cambios / Devoluciones de la orden (Paso 1 del wizard) ─────────────────
+
+  @Get('orders/:id/cambios')
+  getOrderCambios(@Param('id') id: string) { return this.appService.getOrderCambios(+id); }
+
+  /** Reemplaza el set completo de cambios/devoluciones y ajusta tiene_cambios del header. */
+  @Put('orders/:id/cambios')
+  saveOrderCambios(
+    @Param('id') id: string,
+    @Body() body: { cambios: any[] },
+    @Headers('x-user-id') userId: string,
+    @Headers('x-user-role') role: string,
+  ) {
+    return this.appService.saveOrderCambios(+id, body.cambios, +userId, role);
+  }
+
+  // ── Configuración de Compras ──────────────────────────────────────────────
+
+  @Get('config')
+  getPurchasesConfig() { return this.appService.getPurchasesConfig(); }
+
+  @Put('config')
+  updatePurchasesConfig(@Body() body: any, @Headers('x-user-id') userId: string) {
+    return this.appService.updatePurchasesConfig(body, userId ? +userId : undefined);
   }
 
   // ── Turno Config ──────────────────────────────────────────────────────────

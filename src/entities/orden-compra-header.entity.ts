@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { TipoPago } from './tipo-pago.entity';
 import { OrdenCompraItem } from './orden-compra-item.entity';
+import { OrdenCompraCambio } from './orden-compra-cambio.entity';
 
 @Entity('orden_compra_header')
 export class OrdenCompraHeader {
@@ -72,6 +73,10 @@ export class OrdenCompraHeader {
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   pronto_pago_pct: number | null;
 
+  /** Base del descuento de pronto pago: 'neto' | 'total' (default 'total' c/IVA). */
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  pronto_pago_base: string | null;
+
   // Tipo de facturación estructurado (FK a billing_types)
   @Column({ nullable: true })
   billing_type_id: number | null;
@@ -98,9 +103,77 @@ export class OrdenCompraHeader {
   @Column({ type: 'boolean', default: false })
   es_generico: boolean;
 
+  // ── Paso 1 del wizard (respuestas de las preguntas iniciales) ──
+  /** ¿Pedido habitual o cambio de precio? 'habitual' | 'cambio_precio'. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  tipo_pedido: string | null;
+
+  /** ¿Precio actual o nuevo? 'actual' | 'nuevo'. (Impacto en precios: diferido.) */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  precio_tipo: string | null;
+
+  /** ¿Tiene cambios/devoluciones? (solo si el proveedor acepta_devoluciones). */
+  @Column({ type: 'boolean', default: false })
+  tiene_cambios: boolean;
+
+  /** ¿Se solicitan cajas? (solo si el proveedor trabaja_con_caja). */
+  @Column({ type: 'boolean', default: false })
+  solicita_cajas: boolean;
+
+  /** Cantidad de cajas solicitadas (si solicita_cajas). */
+  @Column({ type: 'int', nullable: true })
+  cantidad_cajas: number | null;
+
+  // ── Facturación (Parte A / Parte B) ──────────────────────────────────────
+  // Los % se aplican al VALORIZADO FINAL de cada parte, NO producto por producto:
+  //   Parte A (Factura) = neto × pct_a/100 × (1 + (iva_a_pct + Σ percep. activas)/100)
+  //   Parte B (Remito)  = neto × pct_b/100 × (1 + (iva_b_activo ? iva_b_pct : 0)/100)
+  // El ponderado (pct_a/100 × iva_general) NO juega acá: ese es para el precio de costo.
+  // Se snapshotean en el header (no se recalculan desde config) para que una orden
+  // vieja conserve las alícuotas con las que se armó.
+  // Ver docs/plan-orden-compra-precios-facturacion.md
+
+  /** IVA de la Parte A (Factura). Default de config.iva_general, editable por orden. */
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  iva_a_pct: number | null;
+
+  /** Percepciones aplicadas a la Parte A: se SUMAN al iva_a_pct. */
+  @Column({ type: 'boolean', default: false })
+  percep_iva_activo: boolean;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  percep_iva_pct: number | null;
+
+  @Column({ type: 'boolean', default: false })
+  percep_iibb_bsas_activo: boolean;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  percep_iibb_bsas_pct: number | null;
+
+  @Column({ type: 'boolean', default: false })
+  percep_iibb_caba_activo: boolean;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  percep_iibb_caba_pct: number | null;
+
+  /** Parte B normalmente va sin IVA. Excepción: el proveedor pone un %. */
+  @Column({ type: 'boolean', default: false })
+  iva_b_activo: boolean;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  iva_b_pct: number | null;
+
+  /** De dónde salieron los % de facturación: 'ultimo_pedido' | 'config' | 'manual'. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  facturacion_origen: string | null;
+
   // Líneas de detalle de productos. Una orden = una condición de facturación (billing_type_id).
   @OneToMany(() => OrdenCompraItem, (item) => item.orden_compra, { cascade: true })
   items: OrdenCompraItem[];
+
+  // Cambios / devoluciones asociados a la orden (Paso 1 del wizard).
+  @OneToMany(() => OrdenCompraCambio, (cambio) => cambio.orden_compra, { cascade: true })
+  cambios: OrdenCompraCambio[];
 
   @Column({ nullable: true })
   created_by: number;
@@ -108,13 +181,20 @@ export class OrdenCompraHeader {
   @Column({ nullable: true })
   updated_by: number;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  /**
+   * Cuándo se editó la orden DESPUÉS de confirmarse (estado ≠ borrador al guardar).
+   * null = nunca se editó tras el alta. Ver getEditStamp / saveOrderItems / updateOrder.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  fecha_ultima_edicion: Date | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
-  @Column({
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-    onUpdate: 'CURRENT_TIMESTAMP',
-  })
+  // OJO: usar @UpdateDateColumn, NO @Column con onUpdate. En Postgres TypeORM IGNORA
+  // `onUpdate: CURRENT_TIMESTAMP` (es de MySQL) → updated_at quedaba fijo al valor del
+  // alta y "¿se editó la orden?" daba siempre que no. @UpdateDateColumn lo setea TypeORM
+  // en cada save() del header (updateOrder, saveOrderItems, saveOrderCambios, confirmOrder).
+  @UpdateDateColumn({ type: 'timestamp' })
   updated_at: Date;
   }
