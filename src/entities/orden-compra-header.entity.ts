@@ -46,6 +46,15 @@ export class OrdenCompraHeader {
   @Column({ type: 'decimal', precision: 18, scale: 2, nullable: true })
   monto: number;
 
+  /**
+   * Override manual y TEMPORAL del monto final (Total Facturado). Se carga a mano
+   * (el usuario lo saca con Excel) mientras faltan los descuentos estáticos/dinámicos.
+   * Si != null, PISA el monto calculado en montoFacturado(). Gateado en el front por
+   * MONTO_MANUAL_ENABLED. Quitar cuando la valorización esté completa.
+   */
+  @Column({ type: 'decimal', precision: 18, scale: 2, nullable: true })
+  monto_manual: number | null;
+
   @Column({ type: 'text', nullable: true })
   nota: string;
 

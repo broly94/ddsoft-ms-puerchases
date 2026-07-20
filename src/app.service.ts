@@ -166,7 +166,12 @@ export class AppService {
     // el Paso 3 → hay que recalcularlo desde las líneas o quedaría stale.
     // Sin líneas no se toca: puede ser una orden con monto cargado a mano.
     const items = await this.ordenCompraItemRepository.find({ where: { orden_compra_id: id } });
-    if (items.length) order.monto = this.montoFacturado(order, items);
+    // Override manual del monto final (temporal): pisa el cálculo incluso sin líneas.
+    if (order.monto_manual != null) {
+      order.monto = Math.round(Number(order.monto_manual) * 100) / 100;
+    } else if (items.length) {
+      order.monto = this.montoFacturado(order, items);
+    }
     this.stampEditIfConfirmed(order, estadoGuardado);
     return this.ordenCompraRepository.save(order);
   }
@@ -275,6 +280,9 @@ export class AppService {
     header: OrdenCompraHeader,
     items: { cantidad_bultos: number; uxb_compra: number; precio_costo: number; pct_a: number | null; pct_b: number | null }[],
   ): number {
+    // Override manual TEMPORAL: si el usuario cargó un monto a mano (sacado con Excel),
+    // ese es el monto final, sin recálculo. Ver monto_manual en la entidad / MONTO_MANUAL_ENABLED.
+    if (header.monto_manual != null) return Math.round(Number(header.monto_manual) * 100) / 100;
     const n = (v: any): number => Number(v) || 0;
     const neto = items.reduce((s, i) => s + n(i.cantidad_bultos) * n(i.uxb_compra) * n(i.precio_costo), 0);
 
