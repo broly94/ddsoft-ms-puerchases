@@ -38,6 +38,15 @@ export class ProductBillingAssignment {
   @Column({ type: 'int', nullable: true })
   bonif_bonifica: number | null;
 
+  // ── Lista de precios (costo NETO unitario por lista, cuando costo_source='lista') ──
+  // Doble precio: actual (vigente) y nueva (la que viene). 4 decimales: un precio por
+  // bulto / uxb rara vez da un unitario redondo. Ver docs/plan-orden-compra-lista-precios.md
+  @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
+  precio_lista_actual: number | null;
+
+  @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
+  precio_lista_nueva: number | null;
+
   @ManyToOne(() => PurchasesProvider, (p) => p.product_assignments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'provider_id' })
   provider: PurchasesProvider;

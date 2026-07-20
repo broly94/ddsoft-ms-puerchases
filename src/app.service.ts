@@ -64,6 +64,9 @@ export class AppService {
     const POLICIES = ['todos', 'creador_mod_admin', 'mod_admin', 'admin'];
     if (data.orden_edit_policy && POLICIES.includes(data.orden_edit_policy)) cfg.orden_edit_policy = data.orden_edit_policy;
     if (data.orden_delete_policy && POLICIES.includes(data.orden_delete_policy)) cfg.orden_delete_policy = data.orden_delete_policy;
+    if (data.costo_source === 'erp' || data.costo_source === 'lista') cfg.costo_source = data.costo_source;
+    if (['actual', 'pct', 'promedio'].includes(data.gap_fill_strategy as string)) cfg.gap_fill_strategy = data.gap_fill_strategy!;
+    cfg.gap_fill_pct = num(data.gap_fill_pct, cfg.gap_fill_pct);
     if (data.multiplo_activo !== undefined) cfg.multiplo_activo = !!data.multiplo_activo;
     cfg.multiplo_bultos = Math.max(1, parseInt(String(data.multiplo_bultos ?? cfg.multiplo_bultos)) || cfg.multiplo_bultos);
     if (Array.isArray(data.iva_producto_overrides)) cfg.iva_producto_overrides = data.iva_producto_overrides;

@@ -396,4 +396,65 @@ export class ProvidersService {
 
     return { updated: existing.length, skipped: codArticulos.length - existing.length };
   }
+
+  // ── Lista de precios (actual / nueva) ──────────────────────────────────────
+
+  /**
+   * Carga precios en la lista NUEVA de varios artículos (bulk). Sólo actualiza
+   * artículos que ya tienen asignación (billing type) — sin ella no puede haber lista.
+   * NO promueve: la promoción es aparte (`promotePriceList`).
+   * Ver docs/plan-orden-compra-lista-precios.md
+   */
+  async bulkSetPriceListNueva(
+    providerId: number,
+    items: { cod_articulo: string; precio_nuevo: number | null }[],
+    userId?: number,
+  ): Promise<{ updated: number; skipped: number }> {
+    if (!items?.length) return { updated: 0, skipped: 0 };
+    const cods = items.map((i) => i.cod_articulo);
+    const existing = await this.assignmentRepo.find({
+      where: { provider_id: providerId, cod_articulo: In(cods) },
+    });
+    const byCod = new Map(existing.map((a) => [a.cod_articulo, a]));
+    const toSave: ProductBillingAssignment[] = [];
+    for (const it of items) {
+      const a = byCod.get(it.cod_articulo);
+      if (!a) continue;
+      const p = Number(it.precio_nuevo);
+      // 4 decimales: preserva el precio por bulto (unitario = bulto / uxb).
+      a.precio_lista_nueva = it.precio_nuevo == null || isNaN(p) || p < 0 ? null : Math.round(p * 10000) / 10000;
+      a.updated_by = userId ?? a.updated_by;
+      toSave.push(a);
+    }
+    if (toSave.length) await this.assignmentRepo.save(toSave);
+    return { updated: toSave.length, skipped: items.length - toSave.length };
+  }
+
+  /**
+   * ¿El proveedor tiene lista de precios cargada? (chequeo liviano, sólo assignments).
+   * Para el bloqueo del Paso 1 cuando costo_source='lista'.
+   */
+  async priceListStatus(providerId: number): Promise<{ hasActual: boolean; hasNueva: boolean }> {
+    const rows = await this.assignmentRepo.find({ where: { provider_id: providerId } });
+    return {
+      hasActual: rows.some((a) => a.precio_lista_actual != null),
+      hasNueva: rows.some((a) => a.precio_lista_nueva != null),
+    };
+  }
+
+  /**
+   * Promueve la lista: para todos los artículos del proveedor con `precio_lista_nueva`,
+   * actual = nueva y nueva = null. Se corre ANTES de cargar una lista nueva (si ya había).
+   */
+  async promotePriceList(providerId: number, userId?: number): Promise<{ promoted: number }> {
+    const rows = await this.assignmentRepo.find({ where: { provider_id: providerId } });
+    const toSave = rows.filter((a) => a.precio_lista_nueva != null);
+    for (const a of toSave) {
+      a.precio_lista_actual = a.precio_lista_nueva;
+      a.precio_lista_nueva = null;
+      a.updated_by = userId ?? a.updated_by;
+    }
+    if (toSave.length) await this.assignmentRepo.save(toSave);
+    return { promoted: toSave.length };
+  }
 }

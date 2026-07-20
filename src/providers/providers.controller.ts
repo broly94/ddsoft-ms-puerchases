@@ -142,6 +142,28 @@ export class ProvidersController {
     );
   }
 
+  /** Carga la lista NUEVA de precios (bulk) de varios artículos. */
+  @MessagePattern({ cmd: 'providers.pricelist.set_nueva' })
+  bulkSetPriceListNueva(@Payload() data: {
+    provider_id: number;
+    items: { cod_articulo: string; precio_nuevo: number | null }[];
+    user_id?: number;
+  }) {
+    return this.service.bulkSetPriceListNueva(data.provider_id, data.items, data.user_id);
+  }
+
+  /** ¿El proveedor tiene lista cargada? (chequeo liviano para el Paso 1). */
+  @MessagePattern({ cmd: 'providers.pricelist.status' })
+  priceListStatus(@Payload() data: { provider_id: number }) {
+    return this.service.priceListStatus(data.provider_id);
+  }
+
+  /** Promueve la lista: nueva → actual (para todos los artículos del proveedor). */
+  @MessagePattern({ cmd: 'providers.pricelist.promote' })
+  promotePriceList(@Payload() data: { provider_id: number; user_id?: number }) {
+    return this.service.promotePriceList(data.provider_id, data.user_id);
+  }
+
   @MessagePattern({ cmd: 'providers.assignments.delete' })
   deleteAssignment(@Payload() data: { provider_id: number; cod_articulo: string }) {
     return this.service.deleteAssignment(data.provider_id, data.cod_articulo);

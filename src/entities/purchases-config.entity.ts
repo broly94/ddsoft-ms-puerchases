@@ -52,6 +52,22 @@ export class PurchasesConfig {
   @Column({ type: 'varchar', length: 20, default: 'mod_admin' })
   orden_delete_policy: string;
 
+  /** Fuente del costo de los productos: 'erp' (Gescom) | 'lista' (lista por proveedor). */
+  @Column({ type: 'varchar', length: 10, default: 'erp' })
+  costo_source: string;
+
+  /**
+   * Relleno de faltantes al cargar lista nueva: qué costo nuevo poner a los productos
+   * que el proveedor NO incluyó en la lista nueva (no aumentaron). Amortiza el salto futuro.
+   * 'actual' = dejar el actual · 'pct' = actual×(1+%/100) · 'promedio' = promedio entre actual y actual×(1+%/100).
+   * gap_fill_pct es el % que usan 'pct' y 'promedio'. Default en la config; editable en el modal.
+   */
+  @Column({ type: 'varchar', length: 10, default: 'actual' })
+  gap_fill_strategy: string;
+
+  @Column({ type: 'numeric', precision: 6, scale: 2, default: 0 })
+  gap_fill_pct: number;
+
   @Column({ type: 'boolean', default: true })
   multiplo_activo: boolean;
 
