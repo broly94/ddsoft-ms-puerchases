@@ -55,6 +55,14 @@ export class OrdenCompraHeader {
   @Column({ type: 'decimal', precision: 18, scale: 2, nullable: true })
   monto_manual: number | null;
 
+  /**
+   * Orden ORIGEN de la que salió este pedido (resto de una entrega parcial). NULL = orden normal.
+   * Apunta siempre a la RAÍZ (la orden real), aunque el resto se vuelva a partir. Se usa para
+   * EXCLUIR los restos del promedio de entrega: así un pedido lógico cuenta una sola vez.
+   */
+  @Column({ type: 'int', nullable: true })
+  referencia: number | null;
+
   @Column({ type: 'text', nullable: true })
   nota: string;
 

@@ -180,6 +180,10 @@ export class AppService {
     const order = await this.ordenCompraRepository.findOneBy({ id_orden_compra: id });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
     await this.assertPuedeBorrar(order, userId, role);
+    // Si es un PADRE con restos apuntándole, los "libera": el remanente sigue siendo un
+    // pedido válido, así que quedan como órdenes normales (referencia = null) en vez de
+    // apuntar a una orden que ya no existe. Borrar un HIJO no requiere nada especial.
+    await this.ordenCompraRepository.update({ referencia: id }, { referencia: null });
     await this.ordenCompraRepository.delete(id);
     return { success: true };
   }
@@ -584,6 +588,9 @@ export class AppService {
             estado:           'pendiente',
             turno_id:         null,
             fecha_turno:      null,
+            // Referencia a la RAÍZ: si la original ya es un resto, se hereda su referencia;
+            // si no, apunta a la original. Los restos quedan fuera del promedio de entrega.
+            referencia:       o.referencia ?? o.id_orden_compra,
             created_by:       userId,
             updated_by:       userId,
           });
@@ -950,6 +957,10 @@ export class AppService {
         // Los pedidos genéricos (faltantes de carga manual) no representan un pedido
         // real al proveedor, así que no deben distorsionar el promedio de entrega.
         .andWhere('oc.es_generico = false')
+        // Los restos de entrega parcial (referencia != null) son el MISMO pedido lógico
+        // que su original, y con fecha_pedido vieja + entrega tardía inflan el promedio.
+        // Se excluyen: el pedido cuenta una sola vez (por su orden original).
+        .andWhere('oc.referencia IS NULL')
         .distinct(true)
         .getMany(),
       this.pedidoHistoricoRepository.find({
