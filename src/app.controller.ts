@@ -243,6 +243,24 @@ export class AppController {
   @Get('analysis/provider-orders')
   getProviderOrderDates() { return this.appService.getProviderOrderDates(); }
 
+  // ── Promedio de entrega persistido por proveedor ──────────────────────────
+
+  /** Todas las stats de entrega guardadas (para PdP / ficha). */
+  @Get('analysis/delivery-stats')
+  getDeliveryStats() { return this.appService.getDeliveryStats(); }
+
+  /** Guarda (upsert) los promedios calculados. Lo llama el recálculo del gateway. */
+  @Post('analysis/delivery-stats')
+  saveDeliveryStats(@Body() body: { items: { cod_proveedor: string; promedio: number; cruzadas: number }[] }) {
+    return this.appService.bulkSaveDeliveryStats(body?.items || []);
+  }
+
+  /** Setea el modo (auto/manual) + override manual de un proveedor. No toca el promedio. */
+  @Put('analysis/delivery-stats/:cod/mode')
+  setDeliveryMode(@Param('cod') cod: string, @Body() body: { modo: string; manual: number | null }) {
+    return this.appService.setDeliveryMode(cod, body?.modo, body?.manual ?? null);
+  }
+
   /** Recibe PDFs, los procesa con Gemini y devuelve los datos extraídos para revisión. */
   @Post('analysis/extract-pdf-orders')
   @UseInterceptors(FilesInterceptor('files', 60, { limits: { fileSize: 10 * 1024 * 1024 } }))
