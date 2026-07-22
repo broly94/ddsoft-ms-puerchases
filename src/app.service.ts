@@ -391,12 +391,13 @@ export class AppService {
 
       // Recalcular header desde el detalle.
       // Pallets sobre los RECIBIDOS (pagados + bonificados): lo gratis también ocupa
-      // lugar en el camión y en el depósito. Sin bonificación, bonif_bultos = 0 y
-      // el resultado es idéntico al de antes.
-      const totalPallets = normalized.reduce(
-        (s, n) => s + Math.ceil((n.cantidad_bultos + n.bonif_bultos) / (n.bxp || 1)),
-        0,
-      );
+      // lugar en el camión y en el depósito. Sin bonificación, bonif_bultos = 0.
+      // Paletizado FRACCIONADO: cada producto ocupa recibidos/bxp de pallet (NO redondea
+      // para arriba), así los pallets mixtos (varios productos en 1 pallet) suman bien.
+      // El total se guarda con la fracción tal cual (2 decimales); el turnero lo lee igual.
+      const totalPallets = Math.round(
+        normalized.reduce((s, n) => s + (n.cantidad_bultos + n.bonif_bultos) / (n.bxp || 1), 0) * 100,
+      ) / 100;
       const condicion = normalized.find((n) => n.billing_type_id != null)?.billing_type_id ?? header.billing_type_id;
 
       if (normalized.length) {
