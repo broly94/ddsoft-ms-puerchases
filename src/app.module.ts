@@ -19,6 +19,7 @@ import { BillingType } from './entities/billing-type.entity';
 import { PurchasesProvider } from './entities/purchases-provider.entity';
 import { ProviderBillingType } from './entities/provider-billing-type.entity';
 import { ProductBillingAssignment } from './entities/product-billing-assignment.entity';
+import { ProviderDeliveryStat } from './entities/provider-delivery-stat.entity';
 import { ProvidersController } from './providers/providers.controller';
 import { ProvidersService } from './providers/providers.service';
 
@@ -44,7 +45,7 @@ import { ProvidersService } from './providers/providers.service';
     }),
     TypeOrmModule.forFeature([
       OrdenCompraHeader, OrdenCompraItem, OrdenCompraCambio, PedidoHistorico, TipoPago, TurnoConfig, PurchasesConfig, TurnoHeader, Turno,
-      BillingType, PurchasesProvider, ProviderBillingType, ProductBillingAssignment,
+      BillingType, PurchasesProvider, ProviderBillingType, ProductBillingAssignment, ProviderDeliveryStat,
     ]),
     SearchModule,
   ],

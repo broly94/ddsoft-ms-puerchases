@@ -12,6 +12,7 @@ import { Turno } from './entities/turno.entity';
 import { PurchasesProvider } from './entities/purchases-provider.entity';
 import { ProviderBillingType } from './entities/provider-billing-type.entity';
 import { PurchasesConfig } from './entities/purchases-config.entity';
+import { ProviderDeliveryStat } from './entities/provider-delivery-stat.entity';
 
 @Injectable()
 export class AppService {
@@ -38,6 +39,8 @@ export class AppService {
     private providerBillingRepository: Repository<ProviderBillingType>,
     @InjectRepository(PurchasesConfig)
     private purchasesConfigRepository: Repository<PurchasesConfig>,
+    @InjectRepository(ProviderDeliveryStat)
+    private deliveryStatRepository: Repository<ProviderDeliveryStat>,
   ) {}
 
   // ── Configuración de Compras (singleton id=1) ─────────────────────────────
@@ -992,6 +995,55 @@ export class AppService {
       ordenes: Array.from(val.ordenes.entries()).map(([id, fecha]) => ({ id, fecha })),
     }));
   }
+
+  // ── Promedio de entrega por proveedor (provider_delivery_stats) ────────────
+
+  /**
+   * Guarda (upsert) el promedio CALCULADO por proveedor. Sólo toca promedio, cruzadas y
+   * fecha; NO pisa el override manual ni el modo (los setea el usuario). Lo llama el
+   * recálculo del gateway (endpoint manual + cronjob). Ver docs/plan-promedio-entrega-proveedor.md
+   */
+  async bulkSaveDeliveryStats(
+    items: { cod_proveedor: string; promedio: number; cruzadas: number }[],
+  ): Promise<{ updated: number }> {
+    if (!items?.length) return { updated: 0 };
+    const now = new Date();
+    let updated = 0;
+    for (const it of items) {
+      if (!it.cod_proveedor) continue;
+      let row = await this.deliveryStatRepository.findOneBy({ cod_proveedor: it.cod_proveedor });
+      if (!row) row = this.deliveryStatRepository.create({ cod_proveedor: it.cod_proveedor, modo: 'auto' });
+      row.dias_entrega_promedio = it.promedio ?? null;
+      row.entregas_cruzadas = it.cruzadas ?? 0;
+      row.actualizado = now;
+      await this.deliveryStatRepository.save(row);
+      updated++;
+    }
+    return { updated };
+  }
+
+  /** Todas las stats (para PdP / ficha del proveedor). */
+  async getDeliveryStats(): Promise<ProviderDeliveryStat[]> {
+    return this.deliveryStatRepository.find();
+  }
+
+  /** Stat de un proveedor puntual. */
+  async getDeliveryStat(cod_proveedor: string): Promise<ProviderDeliveryStat | null> {
+    return this.deliveryStatRepository.findOneBy({ cod_proveedor });
+  }
+
+  /**
+   * Setea el modo (auto/manual) y el override manual de un proveedor. NO toca el promedio
+   * calculado. Cobertura efectiva = modo==='manual' ? dias_entrega_manual : dias_entrega_promedio.
+   */
+  async setDeliveryMode(cod_proveedor: string, modo: string, manual: number | null): Promise<ProviderDeliveryStat> {
+    let row = await this.deliveryStatRepository.findOneBy({ cod_proveedor });
+    if (!row) row = this.deliveryStatRepository.create({ cod_proveedor });
+    row.modo = modo === 'manual' ? 'manual' : 'auto';
+    row.dias_entrega_manual = manual != null && !isNaN(Number(manual)) ? Math.round(Number(manual)) : null;
+    return this.deliveryStatRepository.save(row);
+  }
+
   // ── Tipo Pago ────────────────────────────────────────────────────────────
 
   async findAllTipoPagos() {
