@@ -68,6 +68,27 @@ export class PurchasesConfig {
   @Column({ type: 'numeric', precision: 6, scale: 2, default: 0 })
   gap_fill_pct: number;
 
+  // ── Punto de Pedido (settings globales, antes vivían en el store del front) ──
+  /** Días de cobertura deseados por default (fallback cuando el proveedor no tiene promedio). */
+  @Column({ type: 'int', default: 45 })
+  pdp_cobertura_dias: number;
+
+  /** % de vida útil que se puede cubrir con la compra sugerida. */
+  @Column({ type: 'numeric', precision: 6, scale: 2, default: 80 })
+  pdp_porcentaje_vida_util: number;
+
+  /** Margen de días para el cálculo de sobre stock. */
+  @Column({ type: 'int', default: 0 })
+  pdp_margen_sobre_stock: number;
+
+  /** ¿Contemplar promociones en la sugerencia? */
+  @Column({ type: 'boolean', default: false })
+  pdp_contemplar_promociones: boolean;
+
+  /** ¿Multiplicar × 2 el promedio de entrega del proveedor al usarlo como cobertura? */
+  @Column({ type: 'boolean', default: true })
+  pdp_promedio_x2: boolean;
+
   @Column({ type: 'boolean', default: true })
   multiplo_activo: boolean;
 

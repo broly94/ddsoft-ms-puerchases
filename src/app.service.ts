@@ -70,6 +70,11 @@ export class AppService {
     if (data.costo_source === 'erp' || data.costo_source === 'lista') cfg.costo_source = data.costo_source;
     if (['actual', 'pct', 'promedio'].includes(data.gap_fill_strategy as string)) cfg.gap_fill_strategy = data.gap_fill_strategy!;
     cfg.gap_fill_pct = num(data.gap_fill_pct, cfg.gap_fill_pct);
+    cfg.pdp_cobertura_dias = Math.max(1, parseInt(String(data.pdp_cobertura_dias ?? cfg.pdp_cobertura_dias)) || cfg.pdp_cobertura_dias);
+    cfg.pdp_porcentaje_vida_util = num(data.pdp_porcentaje_vida_util, cfg.pdp_porcentaje_vida_util);
+    cfg.pdp_margen_sobre_stock = num(data.pdp_margen_sobre_stock, cfg.pdp_margen_sobre_stock);
+    if (data.pdp_contemplar_promociones !== undefined) cfg.pdp_contemplar_promociones = !!data.pdp_contemplar_promociones;
+    if (data.pdp_promedio_x2 !== undefined) cfg.pdp_promedio_x2 = !!data.pdp_promedio_x2;
     if (data.multiplo_activo !== undefined) cfg.multiplo_activo = !!data.multiplo_activo;
     cfg.multiplo_bultos = Math.max(1, parseInt(String(data.multiplo_bultos ?? cfg.multiplo_bultos)) || cfg.multiplo_bultos);
     if (Array.isArray(data.iva_producto_overrides)) cfg.iva_producto_overrides = data.iva_producto_overrides;
